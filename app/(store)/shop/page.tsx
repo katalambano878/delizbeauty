@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { usePageTitle } from '@/hooks/usePageTitle';
 import ProductCard, { type ColorVariant } from '@/components/ProductCard';
@@ -8,6 +8,68 @@ import ProductCardSkeleton from '@/components/skeletons/ProductCardSkeleton';
 import { getColorHex } from '@/components/ProductCard';
 import { cachedQuery } from '@/lib/query-cache';
 import PageHero from '@/components/PageHero';
+
+const PRODUCTS_PER_PAGE = 12;
+
+type ShopProduct = {
+  id: string;
+  slug: string;
+  name: string;
+  price: number;
+  originalPrice?: number;
+  image: string;
+  rating: number;
+  reviewCount: number;
+  badge?: string;
+  inStock: boolean;
+  maxStock: number;
+  moq: number;
+  category?: string;
+  hasVariants: boolean;
+  minVariantPrice?: number;
+  colorVariants: ColorVariant[];
+};
+
+function formatProduct(p: any): ShopProduct {
+  const variants = p.product_variants || [];
+  const hasVariants = variants.length > 0;
+  const minVariantPrice = hasVariants ? Math.min(...variants.map((v: any) => v.price || p.price)) : undefined;
+  const totalVariantStock = hasVariants ? variants.reduce((sum: number, v: any) => sum + (v.quantity || 0), 0) : 0;
+  const effectiveStock = hasVariants ? totalVariantStock : p.quantity;
+  const colorVariants: ColorVariant[] = [];
+  const seenColors = new Set<string>();
+  for (const v of variants) {
+    const colorName = v.option2;
+    if (colorName && !seenColors.has(colorName.toLowerCase().trim())) {
+      const hex = getColorHex(colorName);
+      if (hex) {
+        seenColors.add(colorName.toLowerCase().trim());
+        colorVariants.push({ name: colorName.trim(), hex });
+      }
+    }
+  }
+  const images = Array.isArray(p.product_images) ? [...p.product_images].sort((a: any, b: any) => (a.position ?? 0) - (b.position ?? 0)) : [];
+  const firstImageUrl = images.find((img: any) => Number(img.position) === 0)?.url || images[0]?.url || 'https://via.placeholder.com/800x800?text=No+Image';
+
+  return {
+    id: p.id,
+    slug: p.slug,
+    name: p.name,
+    price: p.price,
+    originalPrice: p.compare_at_price,
+    image: firstImageUrl,
+    rating: p.rating_avg || 0,
+    reviewCount: 0,
+    badge: p.compare_at_price > p.price ? 'Sale' : undefined,
+    inStock: effectiveStock > 0,
+    maxStock: effectiveStock || 50,
+    moq: p.moq || 1,
+    category: p.categories?.name,
+    hasVariants,
+    minVariantPrice,
+    colorVariants,
+  };
+}
 
 function ShopContent() {
   usePageTitle('Shop All Products');
@@ -47,10 +109,13 @@ function ShopContent() {
   };
 
   // State
-  const [products, setProducts] = useState<any[]>([]);
+  const [products, setProducts] = useState<ShopProduct[]>([]);
   const [categories, setCategories] = useState<any[]>([{ id: 'all', name: 'All Products', count: 0 }]);
-  const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [totalProducts, setTotalProducts] = useState(0);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
 
   // Filters
   const [selectedCategory, setSelectedCategory] = useState('all');
@@ -58,14 +123,17 @@ function ShopContent() {
   const [selectedRating, setSelectedRating] = useState(0);
   const [sortBy, setSortBy] = useState('popular');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
-  const [page, setPage] = useState(1);
-  const productsPerPage = 9;
+
+  // Refs for infinite scroll guards (avoid stale closures + duplicate requests)
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const inFlightPageRef = useRef<number>(0);
+  const fetchKeyRef = useRef<string>('');
 
   // Initialize from URL params
   useEffect(() => {
     const category = searchParams.get('category');
     const sort = searchParams.get('sort');
-    const search = searchParams.get('search');
 
     if (category) {
       const resolvedCategory = resolveCategorySlug(category, categories);
@@ -75,7 +143,6 @@ function ShopContent() {
     }
 
     if (sort) setSortBy(sort);
-    // Search is handled in the fetch function via searchParams directly or we could add a state for it
   }, [searchParams, categories]);
 
   // Fetch Categories from cached API
@@ -94,12 +161,27 @@ function ShopContent() {
     fetchCategories();
   }, []);
 
-  // Fetch Products from API (service role) so product_images always load on storefront
-  useEffect(() => {
-    async function fetchProducts() {
-      setLoading(true);
+  // Build a deterministic key for current filters (excluding page).
+  // When this key changes, products are reset and pagination restarts.
+  const search = searchParams.get('search') || '';
+  const fetchKey = `${selectedCategory}::${search}::${priceRange.join('-')}::${selectedRating}::${sortBy}`;
+
+  const loadProducts = useCallback(
+    async (targetPage: number, replace: boolean) => {
+      // Avoid duplicate concurrent requests for the same page+filters
+      if (inFlightPageRef.current === targetPage && fetchKeyRef.current === fetchKey) return;
+
+      // Cancel any previous request before starting a new one
+      if (abortRef.current) abortRef.current.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+      inFlightPageRef.current = targetPage;
+      fetchKeyRef.current = fetchKey;
+
+      if (replace) setInitialLoading(true);
+      else setLoadingMore(true);
+
       try {
-        const search = searchParams.get('search') || '';
         let categorySlugs = 'all';
         if (selectedCategory !== 'all') {
           const categoryObj = categories.find((c: any) => c.slug === selectedCategory);
@@ -113,7 +195,7 @@ function ShopContent() {
           }
         }
 
-        const cacheKey = `shop:${selectedCategory}:${search}:${priceRange.join('-')}:${selectedRating}:${sortBy}:${page}`;
+        const cacheKey = `shop:${selectedCategory}:${search}:${priceRange.join('-')}:${selectedRating}:${sortBy}:${targetPage}`;
         const { data, count } = await cachedQuery<{ data: any[]; count: number }>(
           cacheKey,
           async () => {
@@ -124,10 +206,10 @@ function ShopContent() {
               priceMax: String(priceRange[1]),
               rating: String(selectedRating),
               sortBy,
-              page: String(page),
-              limit: String(productsPerPage),
+              page: String(targetPage),
+              limit: String(PRODUCTS_PER_PAGE),
             });
-            const res = await fetch(`/api/storefront/shop?${params}`);
+            const res = await fetch(`/api/storefront/shop?${params}`, { signal: controller.signal });
             if (!res.ok) {
               const err = await res.json().catch(() => ({}));
               throw new Error(err.error || 'Failed to load products');
@@ -137,61 +219,72 @@ function ShopContent() {
           30 * 1000
         );
 
-        if (data) {
-          const formattedProducts = data.map((p: any) => {
-            const variants = p.product_variants || [];
-            const hasVariants = variants.length > 0;
-            const minVariantPrice = hasVariants ? Math.min(...variants.map((v: any) => v.price || p.price)) : undefined;
-            const totalVariantStock = hasVariants ? variants.reduce((sum: number, v: any) => sum + (v.quantity || 0), 0) : 0;
-            const effectiveStock = hasVariants ? totalVariantStock : p.quantity;
-            const colorVariants: ColorVariant[] = [];
-            const seenColors = new Set<string>();
-            for (const v of variants) {
-              const colorName = v.option2;
-              if (colorName && !seenColors.has(colorName.toLowerCase().trim())) {
-                const hex = getColorHex(colorName);
-                if (hex) {
-                  seenColors.add(colorName.toLowerCase().trim());
-                  colorVariants.push({ name: colorName.trim(), hex });
-                }
-              }
-            }
-            const images = Array.isArray(p.product_images) ? [...p.product_images].sort((a: any, b: any) => (a.position ?? 0) - (b.position ?? 0)) : [];
-            const firstImageUrl = images.find((img: any) => Number(img.position) === 0)?.url || images[0]?.url || 'https://via.placeholder.com/800x800?text=No+Image';
+        if (controller.signal.aborted) return;
 
-            return {
-              id: p.id,
-              slug: p.slug,
-              name: p.name,
-              price: p.price,
-              originalPrice: p.compare_at_price,
-              image: firstImageUrl,
-              rating: p.rating_avg || 0,
-              reviewCount: 0,
-              badge: p.compare_at_price > p.price ? 'Sale' : undefined,
-              inStock: effectiveStock > 0,
-              maxStock: effectiveStock || 50,
-              moq: p.moq || 1,
-              category: p.categories?.name,
-              hasVariants,
-              minVariantPrice,
-              colorVariants,
-            };
-          });
-          setProducts(formattedProducts);
-          setTotalProducts(count || 0);
+        const formatted = (data || []).map(formatProduct);
+        const totalCount = count || 0;
+
+        setTotalProducts(totalCount);
+        setProducts((prev) => {
+          if (replace) return formatted;
+          // Dedupe in case a request races the user
+          const seen = new Set(prev.map((p) => p.id));
+          return [...prev, ...formatted.filter((p) => !seen.has(p.id))];
+        });
+
+        const loadedSoFar = (replace ? 0 : products.length) + formatted.length;
+        setHasMore(loadedSoFar < totalCount && formatted.length > 0);
+      } catch (err: any) {
+        if (err?.name !== 'AbortError') {
+          console.error('Error fetching products:', err);
         }
-      } catch (err) {
-        console.error('Error fetching products:', err);
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) {
+          if (replace) setInitialLoading(false);
+          setLoadingMore(false);
+          inFlightPageRef.current = 0;
+        }
       }
-    }
+    },
+    [fetchKey, selectedCategory, search, priceRange, selectedRating, sortBy, categories, products.length]
+  );
 
-    fetchProducts();
-  }, [selectedCategory, priceRange, selectedRating, sortBy, page, searchParams, categories]);
+  // Reset & load page 1 whenever filters change
+  useEffect(() => {
+    setPage(1);
+    setProducts([]);
+    setHasMore(true);
+    loadProducts(1, true);
+    // We intentionally only depend on fetchKey; loadProducts is captured fresh via closure
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchKey]);
 
-  const totalPages = Math.ceil(totalProducts / productsPerPage);
+  // Load subsequent pages when `page` advances (triggered by IntersectionObserver)
+  useEffect(() => {
+    if (page > 1) loadProducts(page, false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page]);
+
+  // IntersectionObserver — triggers next page slightly before the user reaches the bottom
+  useEffect(() => {
+    if (!sentinelRef.current) return;
+    if (!hasMore) return;
+    if (initialLoading) return;
+
+    const target = sentinelRef.current;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (entry.isIntersecting && !loadingMore && hasMore) {
+          setPage((prev) => prev + 1);
+        }
+      },
+      { rootMargin: '600px 0px', threshold: 0 }
+    );
+
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [hasMore, initialLoading, loadingMore]);
 
   return (
     <main className="min-h-screen bg-white">
@@ -239,7 +332,6 @@ function ShopContent() {
                         <button
                           onClick={() => {
                             setSelectedCategory('all');
-                            setPage(1);
                             setIsFilterOpen(false);
                           }}
                           className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${selectedCategory === 'all'
@@ -262,7 +354,6 @@ function ShopContent() {
                               <button
                                 onClick={() => {
                                   setSelectedCategory(parent.slug);
-                                  setPage(1);
                                   // Don't close filter immediately if exploring hierarchy
                                 }}
                                 className={`w-full text-left px-4 py-2 rounded-lg transition-colors flex justify-between items-center ${isSelected
@@ -281,7 +372,6 @@ function ShopContent() {
                                       key={child.id}
                                       onClick={() => {
                                         setSelectedCategory(child.slug);
-                                        setPage(1);
                                         setIsFilterOpen(false);
                                       }}
                                       className={`w-full text-left px-4 py-1.5 rounded-lg text-sm transition-colors ${selectedCategory === child.slug
@@ -312,7 +402,6 @@ function ShopContent() {
                           value={priceRange[1]}
                           onChange={(e) => {
                             setPriceRange([0, parseInt(e.target.value)]);
-                            setPage(1);
                           }}
                           className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-gray-900"
                         />
@@ -332,7 +421,6 @@ function ShopContent() {
                             key={rating}
                             onClick={() => {
                               setSelectedRating(rating === selectedRating ? 0 : rating);
-                              setPage(1);
                             }}
                             className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${selectedRating === rating
                               ? 'bg-gray-100 text-gray-900'
@@ -379,7 +467,6 @@ function ShopContent() {
                     value={sortBy}
                     onChange={(e) => {
                       setSortBy(e.target.value);
-                      setPage(1);
                     }}
                     className="px-4 py-2 pr-8 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-gray-900 text-sm bg-white cursor-pointer"
                   >
@@ -392,7 +479,7 @@ function ShopContent() {
                 </div>
               </div>
 
-              {loading ? (
+              {initialLoading ? (
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-x-4 gap-y-8 md:gap-8">
                   {[...Array(6)].map((_, i) => (
                     <ProductCardSkeleton key={i} />
@@ -403,6 +490,9 @@ function ShopContent() {
                   <div className="grid grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-8 md:gap-8" data-product-shop>
                     {products.map(product => (
                       <ProductCard key={product.id} {...product} />
+                    ))}
+                    {loadingMore && [...Array(3)].map((_, i) => (
+                      <ProductCardSkeleton key={`more-${i}`} />
                     ))}
                   </div>
 
@@ -418,7 +508,6 @@ function ShopContent() {
                           setSelectedCategory('all');
                           setPriceRange([0, 5000]);
                           setSelectedRating(0);
-                          setPage(1);
                         }}
                         className="inline-flex items-center bg-gray-900 hover:bg-gray-800 text-white px-6 py-3 rounded-lg font-medium transition-colors whitespace-nowrap"
                       >
@@ -426,35 +515,18 @@ function ShopContent() {
                       </button>
                     </div>
                   )}
+
+                  {/* Infinite scroll sentinel — observed by IntersectionObserver */}
+                  {hasMore && products.length > 0 && (
+                    <div ref={sentinelRef} aria-hidden="true" className="h-10 w-full" />
+                  )}
+
+                  {!hasMore && products.length > 0 && (
+                    <div className="mt-12 text-center text-sm text-gray-500">
+                      You&apos;ve reached the end &middot; {totalProducts} products
+                    </div>
+                  )}
                 </>
-              )}
-
-              {/* Pagination */}
-              {totalPages > 1 && (
-                <div className="mt-16 flex justify-center">
-                  <div className="flex items-center space-x-2">
-                    <button
-                      onClick={() => setPage(p => Math.max(1, p - 1))}
-                      disabled={page === 1}
-                      className="w-10 h-10 flex items-center justify-center border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <i className="ri-arrow-left-s-line text-xl text-gray-700"></i>
-                    </button>
-
-                    {/* Simple page numbers - condensed for brevity */}
-                    <span className="px-4 font-medium text-gray-700">
-                      Page {page} of {totalPages}
-                    </span>
-
-                    <button
-                      onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                      disabled={page === totalPages}
-                      className="w-10 h-10 flex items-center justify-center border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <i className="ri-arrow-right-s-line text-xl text-gray-700"></i>
-                    </button>
-                  </div>
-                </div>
               )}
             </div>
           </div>
