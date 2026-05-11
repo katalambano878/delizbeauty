@@ -274,19 +274,23 @@ export default function ProductForm({ initialData, isEditMode = false }: Product
         { id: 'seo', label: 'SEO', icon: 'ri-search-line' }
     ];
 
-    // Fetch categories on mount
+    const [categoriesLoaded, setCategoriesLoaded] = useState(false);
+
     useEffect(() => {
+        let cancelled = false;
         async function fetchCategories() {
-            const { data } = await supabase.from('categories').select('id, name').eq('status', 'active');
-            if (data) {
-                setCategories(data);
-                if (data.length > 0 && !categoryId) {
-                    setCategoryId(data[0].id);
-                }
-            }
+            const { data } = await supabase
+                .from('categories')
+                .select('id, name')
+                .eq('status', 'active')
+                .order('name', { ascending: true });
+            if (cancelled) return;
+            setCategories(data || []);
+            setCategoriesLoaded(true);
         }
         fetchCategories();
-    }, [categoryId]);
+        return () => { cancelled = true; };
+    }, []);
 
     // Auto-generate slug from name if not manually edited
     useEffect(() => {
@@ -436,6 +440,19 @@ export default function ProductForm({ initialData, isEditMode = false }: Product
 
     const handleSubmit = async () => {
         try {
+            if (!productName.trim()) {
+                alert('Please enter a product name.');
+                return;
+            }
+            if (!categoriesLoaded) {
+                alert('Categories are still loading. Please wait a moment and try again.');
+                return;
+            }
+            if (!categoryId) {
+                alert('Please select a category before saving.');
+                return;
+            }
+
             setLoading(true);
 
             const hasVariants = variants.length > 0;
@@ -656,10 +673,13 @@ export default function ProductForm({ initialData, isEditMode = false }: Product
                                     <select
                                         value={categoryId}
                                         onChange={(e) => setCategoryId(e.target.value)}
-                                        className="w-full px-4 py-3 pr-8 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-600 focus:border-gray-600 cursor-pointer"
+                                        required
+                                        className={`w-full px-4 py-3 pr-8 border-2 rounded-lg focus:ring-2 focus:ring-gray-600 focus:border-gray-600 cursor-pointer ${
+                                            !categoriesLoaded || !categoryId ? 'border-amber-400 bg-amber-50' : 'border-gray-300'
+                                        }`}
                                     >
-                                        {categories.length === 0 && <option value="">Loading categories...</option>}
-                                        {categories.length > 0 && <option value="">Select a category</option>}
+                                        {!categoriesLoaded && <option value="">Loading categories...</option>}
+                                        {categoriesLoaded && <option value="">— Select a category —</option>}
                                         {categories.map(cat => (
                                             <option key={cat.id} value={cat.id}>{cat.name}</option>
                                         ))}
