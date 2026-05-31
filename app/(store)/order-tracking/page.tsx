@@ -255,8 +255,6 @@ function OrderTrackingContent() {
   const statusBadge = getStatusBadge();
   const trackingNumber = order.metadata?.tracking_number || '';
   const shippingAddress = order.shipping_address || {};
-  const estimatedDelivery = new Date(new Date(order.created_at).getTime() + 7 * 24 * 60 * 60 * 1000)
-    .toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
 
   return (
     <main className="min-h-screen bg-gray-50 py-12 px-4">
@@ -281,7 +279,7 @@ function OrderTrackingContent() {
                   <span className="font-mono bg-gray-100 px-2 py-0.5 rounded text-sm">{trackingNumber}</span>
                 </p>
               )}
-              <p className="text-gray-500 text-sm mt-1">Estimated delivery: {estimatedDelivery}</p>
+              <p className="text-gray-500 text-sm mt-1">Estimated delivery: same day &ndash; next day</p>
             </div>
             <div className={`px-4 py-2 rounded-full font-semibold whitespace-nowrap ${statusBadge.color}`}>
               {statusBadge.label}

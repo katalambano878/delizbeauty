@@ -110,7 +110,6 @@ function OrderSuccessContent() {
   }
 
   const orderDate = new Date(order.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
-  const estimatedDelivery = new Date(new Date(order.created_at).getTime() + 7 * 24 * 60 * 60 * 1000).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
   const pointsEarned = Math.floor(order.total / 10); // Example logic: 1 point per 10 currency units
 
   return (
@@ -158,7 +157,8 @@ function OrderSuccessContent() {
                 </div>
                 <div>
                   <p className="text-sm text-gray-600 mb-1">Estimated Delivery</p>
-                  <p className="text-lg font-bold text-gray-900">{estimatedDelivery}</p>
+                  <p className="text-lg font-bold text-gray-900">Same day &ndash; next day</p>
+                  <p className="text-xs text-gray-500 mt-1">Most orders ship the same day</p>
                 </div>
               </div>
             </div>
