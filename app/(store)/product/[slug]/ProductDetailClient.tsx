@@ -140,16 +140,35 @@ export default function ProductDetailClient({ slug }: { slug: string }) {
         setSelectedSize('');
         setSelectedColor('');
 
-        // Fetch related products (cached for 5 minutes)
-        if (dataToTransform.category_id) {
+        // Fetch related products sharing any category (cached for 5 minutes)
+        const relatedCategoryIds = (dataToTransform.product_categories || [])
+          .map((row: any) => row?.category_id)
+          .filter(Boolean);
+        const categoryIdsForRelated = relatedCategoryIds.length > 0
+          ? relatedCategoryIds
+          : (dataToTransform.category_id ? [dataToTransform.category_id] : []);
+
+        if (categoryIdsForRelated.length > 0) {
           const { data: related } = await cachedQuery<{ data: any; error: any }>(
-            `related:${dataToTransform.category_id}:${dataToTransform.id}`,
-            (() => supabase
-              .from('products')
-              .select('*, product_images(url, position), product_variants(id, name, price, quantity)')
-              .eq('category_id', dataToTransform.category_id)
-              .neq('id', dataToTransform.id)
-              .limit(4)) as any,
+            `related:${categoryIdsForRelated.join(',')}:${dataToTransform.id}`,
+            (async () => {
+              const { data: links, error: linksError } = await supabase
+                .from('product_categories')
+                .select('product_id')
+                .in('category_id', categoryIdsForRelated)
+                .neq('product_id', dataToTransform.id);
+
+              if (linksError || !links?.length) {
+                return { data: [], error: linksError };
+              }
+
+              const relatedIds = [...new Set(links.map((row: any) => row.product_id))].slice(0, 4);
+              return supabase
+                .from('products')
+                .select('*, product_images(url, position), product_variants(id, name, price, quantity)')
+                .in('id', relatedIds)
+                .eq('status', 'active');
+            }) as any,
             5 * 60 * 1000
           );
 

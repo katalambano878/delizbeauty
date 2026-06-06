@@ -62,7 +62,26 @@ export async function DELETE(
   }
 
   try {
-    await supabaseAdmin.from('products').update({ category_id: null }).eq('category_id', categoryId);
+    const { data: affectedProducts } = await supabaseAdmin
+      .from('products')
+      .select('id')
+      .eq('category_id', categoryId);
+
+    await supabaseAdmin.from('product_categories').delete().eq('category_id', categoryId);
+
+    for (const product of affectedProducts || []) {
+      const { data: remaining } = await supabaseAdmin
+        .from('product_categories')
+        .select('category_id')
+        .eq('product_id', product.id)
+        .limit(1);
+
+      const nextPrimary = remaining?.[0]?.category_id ?? null;
+      await supabaseAdmin
+        .from('products')
+        .update({ category_id: nextPrimary })
+        .eq('id', product.id);
+    }
 
     const { error } = await supabaseAdmin.from('categories').delete().eq('id', categoryId);
     if (error) {

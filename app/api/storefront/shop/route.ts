@@ -46,12 +46,18 @@ export async function GET(request: Request) {
 
   try {
     const runProductQuery = async (params: { nameSearch?: string; categoryFilterSlugs?: string[] }) => {
+      const hasCategoryFilter = Boolean(params.categoryFilterSlugs && params.categoryFilterSlugs.length > 0);
+      const categoryJoin = hasCategoryFilter
+        ? 'product_categories!inner(category_id, categories!inner(id, name, slug, parent_id))'
+        : 'product_categories(category_id, categories(id, name, slug, parent_id))';
+
       let query = supabaseAdmin
         .from('products')
         .select(
           `
           *,
-          categories!inner(id, name, slug, parent_id),
+          categories(id, name, slug, parent_id),
+          ${categoryJoin},
           product_images(url, position),
           product_variants(id, name, price, quantity, option1, option2, image_url, sort_order)
         `,
@@ -63,8 +69,8 @@ export async function GET(request: Request) {
         query = query.ilike('name', `%${params.nameSearch.trim()}%`);
       }
 
-      if (params.categoryFilterSlugs && params.categoryFilterSlugs.length > 0) {
-        query = query.in('categories.slug', params.categoryFilterSlugs);
+      if (hasCategoryFilter) {
+        query = query.in('product_categories.categories.slug', params.categoryFilterSlugs!);
       }
 
       if (priceMax < 5000) {

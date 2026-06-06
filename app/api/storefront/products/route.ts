@@ -24,11 +24,17 @@ export async function GET(request: Request) {
     }
 
     try {
+        const hasCategoryFilter = Boolean(category);
+        const categoryJoin = hasCategoryFilter
+            ? 'product_categories!inner(category_id, categories!inner(id, name, slug))'
+            : 'product_categories(category_id, categories(id, name, slug))';
+
         let query = supabaseAdmin
             .from('products')
             .select(`
                 id, name, slug, price, compare_at_price, quantity, description, metadata,
                 categories(id, name, slug),
+                ${categoryJoin},
                 product_images(url, position),
                 product_variants(id, name, price, quantity)
             `)
@@ -36,12 +42,14 @@ export async function GET(request: Request) {
             .eq('status', 'active');
 
         if (featured) {
-            query = query.eq('featured', true).limit(limit);
-        } else if (category) {
-            query = query.limit(limit);
-        } else {
-            query = query.limit(limit);
+            query = query.eq('featured', true);
         }
+
+        if (hasCategoryFilter) {
+            query = query.eq('product_categories.categories.slug', category);
+        }
+
+        query = query.limit(limit);
 
         const { data, error } = await query;
 

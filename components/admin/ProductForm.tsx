@@ -17,7 +17,15 @@ export default function ProductForm({ initialData, isEditMode = false }: Product
     const [categories, setCategories] = useState<any[]>([]);
 
     const [productName, setProductName] = useState(initialData?.name || '');
-    const [categoryId, setCategoryId] = useState(initialData?.category_id || '');
+    const [categoryIds, setCategoryIds] = useState<string[]>(() => {
+        const fromJunction = (initialData?.product_categories || [])
+            .slice()
+            .sort((a: any, b: any) => Number(b?.is_primary) - Number(a?.is_primary))
+            .map((row: any) => row?.category_id || row?.categories?.id)
+            .filter(Boolean);
+        if (fromJunction.length > 0) return fromJunction;
+        return initialData?.category_id ? [initialData.category_id] : [];
+    });
     const [price, setPrice] = useState(initialData?.price ?? '');
     const [comparePrice, setComparePrice] = useState(initialData?.compare_at_price ?? '');
     const [onSale, setOnSale] = useState(!!(initialData?.compare_at_price && parseFloat(initialData.compare_at_price) > parseFloat(initialData?.price || 0)));
@@ -415,7 +423,9 @@ export default function ProductForm({ initialData, isEditMode = false }: Product
         }
         setAiGenerating(true);
         try {
-            const selectedCat = categories.find((c: any) => c.id === categoryId);
+            const selectedCatNames = categories
+                .filter((c: any) => categoryIds.includes(c.id))
+                .map((c: any) => c.name);
             const res = await fetch('/api/admin/products/generate-description', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -423,7 +433,7 @@ export default function ProductForm({ initialData, isEditMode = false }: Product
                 body: JSON.stringify({
                     imageUrl: firstImage.url,
                     productName: productName || undefined,
-                    categoryName: selectedCat?.name || undefined,
+                    categoryName: selectedCatNames.length > 0 ? selectedCatNames.join(', ') : undefined,
                 }),
             });
             const data = await res.json();
@@ -448,8 +458,8 @@ export default function ProductForm({ initialData, isEditMode = false }: Product
                 alert('Categories are still loading. Please wait a moment and try again.');
                 return;
             }
-            if (!categoryId) {
-                alert('Please select a category before saving.');
+            if (categoryIds.length === 0) {
+                alert('Please select at least one category before saving.');
                 return;
             }
 
@@ -471,7 +481,7 @@ export default function ProductForm({ initialData, isEditMode = false }: Product
                 name: productName,
                 slug: urlSlug || productName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, ''),
                 description,
-                category_id: categoryId || null,
+                category_ids: categoryIds,
                 price: parseFloat(price) || 0,
                 compare_at_price: comparePrice ? parseFloat(comparePrice) : null,
                 sku: sku || generateSku(),
@@ -704,22 +714,76 @@ export default function ProductForm({ initialData, isEditMode = false }: Product
                             <div className="grid md:grid-cols-2 gap-6">
                                 <div>
                                     <label className="block text-sm font-semibold text-gray-900 mb-2">
-                                        Category *
+                                        Categories *
                                     </label>
-                                    <select
-                                        value={categoryId}
-                                        onChange={(e) => setCategoryId(e.target.value)}
-                                        required
-                                        className={`w-full px-4 py-3 pr-8 border-2 rounded-lg focus:ring-2 focus:ring-gray-600 focus:border-gray-600 cursor-pointer ${
-                                            !categoriesLoaded || !categoryId ? 'border-amber-400 bg-amber-50' : 'border-gray-300'
+                                    <p className="text-xs text-gray-500 mb-2">
+                                        Select every category this product belongs to. The first one you pick is treated as the primary category.
+                                    </p>
+                                    <div
+                                        className={`max-h-48 overflow-y-auto rounded-lg border-2 p-3 space-y-2 ${
+                                            !categoriesLoaded || categoryIds.length === 0
+                                                ? 'border-amber-400 bg-amber-50'
+                                                : 'border-gray-300 bg-white'
                                         }`}
                                     >
-                                        {!categoriesLoaded && <option value="">Loading categories...</option>}
-                                        {categoriesLoaded && <option value="">— Select a category —</option>}
-                                        {categories.map(cat => (
-                                            <option key={cat.id} value={cat.id}>{cat.name}</option>
-                                        ))}
-                                    </select>
+                                        {!categoriesLoaded && (
+                                            <p className="text-sm text-gray-500">Loading categories...</p>
+                                        )}
+                                        {categoriesLoaded && categories.length === 0 && (
+                                            <p className="text-sm text-gray-500">No categories found.</p>
+                                        )}
+                                        {categories.map((cat) => {
+                                            const isSelected = categoryIds.includes(cat.id);
+                                            const isPrimary = categoryIds[0] === cat.id;
+                                            return (
+                                                <label
+                                                    key={cat.id}
+                                                    className={`flex items-center gap-3 rounded-md px-2 py-2 cursor-pointer ${
+                                                        isSelected ? 'bg-gray-100' : 'hover:bg-gray-50'
+                                                    }`}
+                                                >
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={isSelected}
+                                                        onChange={() => {
+                                                            setCategoryIds((prev) => {
+                                                                if (prev.includes(cat.id)) {
+                                                                    return prev.filter((id) => id !== cat.id);
+                                                                }
+                                                                return [...prev, cat.id];
+                                                            });
+                                                        }}
+                                                        className="h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-gray-600"
+                                                    />
+                                                    <span className="text-sm text-gray-900">{cat.name}</span>
+                                                    {isPrimary ? (
+                                                        <span className="text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-full px-2 py-0.5">
+                                                            Primary
+                                                        </span>
+                                                    ) : isSelected ? (
+                                                        <button
+                                                            type="button"
+                                                            onClick={(e) => {
+                                                                e.preventDefault();
+                                                                setCategoryIds((prev) => [
+                                                                    cat.id,
+                                                                    ...prev.filter((id) => id !== cat.id),
+                                                                ]);
+                                                            }}
+                                                            className="text-xs font-medium text-gray-600 hover:text-gray-900 underline"
+                                                        >
+                                                            Set primary
+                                                        </button>
+                                                    ) : null}
+                                                </label>
+                                            );
+                                        })}
+                                    </div>
+                                    {categoryIds.length > 1 && (
+                                        <p className="text-xs text-gray-500 mt-2">
+                                            {categoryIds.length} categories selected
+                                        </p>
+                                    )}
                                 </div>
 
                                 <div>

@@ -1,5 +1,10 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import {
+  formatProductCategoryNames,
+  normalizeCategoryIds,
+  syncProductCategories,
+} from '@/lib/product-categories';
 
 export const maxDuration = 30;
 export const dynamic = 'force-dynamic';
@@ -84,6 +89,7 @@ export async function GET(request: Request) {
       .select(`
         *,
         categories(name),
+        product_categories(category_id, is_primary, categories(name)),
         product_variants(count),
         product_images(url, position)
       `);
@@ -107,7 +113,7 @@ export async function GET(request: Request) {
 
       return {
         ...p,
-        category: p.categories?.name || 'Uncategorized',
+        category: formatProductCategoryNames(p),
         image: firstImageUrl,
         product_images: images,
         variantsCount: p.product_variants?.[0]?.count || 0,
@@ -134,7 +140,12 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
-    const { variants = [], ...productData } = body;
+    const { variants = [], category_ids: rawCategoryIds, ...productData } = body;
+    const categoryIds = normalizeCategoryIds(rawCategoryIds ?? productData.category_id);
+    if (categoryIds.length === 0) {
+      return NextResponse.json({ error: 'At least one category is required' }, { status: 400 });
+    }
+    productData.category_id = categoryIds[0];
 
     // Ensure slug is unique
     let slug: string = productData.slug || productData.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '');
@@ -160,6 +171,11 @@ export async function POST(request: Request) {
 
     if (insertError || !newProduct) {
       return NextResponse.json({ error: insertError?.message || 'Failed to create product' }, { status: 500 });
+    }
+
+    const { error: categoryError } = await syncProductCategories(newProduct.id, categoryIds);
+    if (categoryError) {
+      return NextResponse.json({ error: categoryError }, { status: 500 });
     }
 
     // Insert variants if any

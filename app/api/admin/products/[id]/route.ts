@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { normalizeCategoryIds, syncProductCategories } from '@/lib/product-categories';
 
 export const maxDuration = 30;
 export const dynamic = 'force-dynamic';
@@ -70,6 +71,7 @@ export async function GET(
       .select(`
         *,
         categories(id, name),
+        product_categories(category_id, is_primary, categories(id, name)),
         product_variants(*),
         product_images(*)
       `)
@@ -105,7 +107,12 @@ export async function PUT(
 
   try {
     const body = await request.json();
-    const { variants = [], ...productData } = body;
+    const { variants = [], category_ids: rawCategoryIds, ...productData } = body;
+    const categoryIds = normalizeCategoryIds(rawCategoryIds ?? productData.category_id);
+    if (categoryIds.length === 0) {
+      return NextResponse.json({ error: 'At least one category is required' }, { status: 400 });
+    }
+    productData.category_id = categoryIds[0];
 
     // Ensure slug uniqueness (ignore the current product)
     let slug: string = productData.slug || productData.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '');
@@ -131,6 +138,11 @@ export async function PUT(
 
     if (updateError) {
       return NextResponse.json({ error: updateError.message }, { status: 500 });
+    }
+
+    const { error: categoryError } = await syncProductCategories(productId, categoryIds);
+    if (categoryError) {
+      return NextResponse.json({ error: categoryError }, { status: 500 });
     }
 
     // Replace variants.
