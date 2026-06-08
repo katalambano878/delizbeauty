@@ -524,11 +524,15 @@ export async function createChatOrder(
 
     const productMap = new Map<string, any>(products.map((p: any) => [p.id, p]));
 
-    // Validate stock
+    // Validate stock and price
     for (const item of items) {
       const product = productMap.get(item.productId);
       if (!product) {
         return { success: false, message: `Product not found: ${item.productId}` };
+      }
+      const price = Number(product.price);
+      if (!Number.isFinite(price) || price <= 0) {
+        return { success: false, message: `Sorry, "${product.name}" is currently unavailable for purchase (no price set).` };
       }
       if (product.quantity < item.quantity) {
         return { success: false, message: `Sorry, "${product.name}" only has ${product.quantity} units in stock, but you requested ${item.quantity}.` };

@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCart } from '@/context/CartContext';
+import { useCart, isPurchasablePrice } from '@/context/CartContext';
 import PageHero from '@/components/PageHero';
 import { useWishlist } from '@/context/WishlistContext';
 import ProductCard from '@/components/ProductCard';
@@ -13,10 +13,13 @@ export default function WishlistPage() {
   const { addToCart } = useCart();
 
   const addAllToCart = () => {
-    const inStockItems = wishlistItems.filter(item => item.inStock);
-    inStockItems.forEach(item => {
-      // Convert WishlistItem to CartItem if necessary, or assume compatibility
-      addToCart({
+    // Only add in-stock items that have a real price (skip unpriced ones).
+    const addableItems = wishlistItems.filter(
+      (item) => item.inStock && isPurchasablePrice(item.price)
+    );
+    let added = 0;
+    addableItems.forEach(item => {
+      const ok = addToCart({
         id: item.id,
         name: item.name,
         price: item.price,
@@ -25,9 +28,12 @@ export default function WishlistPage() {
         slug: item.slug || item.id, // Fallback
         maxStock: 99 // Default
       });
+      if (ok) added += 1;
     });
-    if (inStockItems.length > 0) {
-      alert(`Added ${inStockItems.length} items to cart`);
+    if (added > 0) {
+      alert(`Added ${added} item${added === 1 ? '' : 's'} to cart`);
+    } else {
+      alert('No items could be added — they are out of stock or unavailable for purchase.');
     }
   };
 

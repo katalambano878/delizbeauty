@@ -24,6 +24,67 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
+    const isValidUUID = (str: string) =>
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+    const isPositivePrice = (value: unknown) => {
+      const n = Number(value);
+      return Number.isFinite(n) && n > 0;
+    };
+
+    // 0. Server-side price validation (authoritative — runs BEFORE creating
+    // the order so unpriced / zero-price items can never be purchased, even if
+    // the client was tampered with).
+    const cartUuids = cart.map((i: any) => i.id).filter(isValidUUID);
+    const cartSlugs = cart.map((i: any) => i.slug || i.id).filter((s: any) => s && !isValidUUID(s));
+
+    const [{ data: byId }, { data: bySlug }] = await Promise.all([
+      cartUuids.length > 0
+        ? supabaseAdmin
+            .from('products')
+            .select('id, slug, price, metadata, product_variants(price)')
+            .in('id', cartUuids)
+        : Promise.resolve({ data: [] as any[] }),
+      cartSlugs.length > 0
+        ? supabaseAdmin
+            .from('products')
+            .select('id, slug, price, metadata, product_variants(price)')
+            .in('slug', cartSlugs)
+        : Promise.resolve({ data: [] as any[] }),
+    ]);
+
+    const productByKey = new Map<string, any>();
+    for (const p of [...(byId || []), ...(bySlug || [])]) {
+      if (p?.id) productByKey.set(p.id, p);
+      if (p?.slug) productByKey.set(p.slug, p);
+    }
+
+    for (const item of cart) {
+      // Client-supplied price must be a real positive number.
+      if (!isPositivePrice(item.price)) {
+        return NextResponse.json(
+          { error: `"${item.name}" is currently unavailable for purchase (no price set). Please remove it from your cart.` },
+          { status: 400 }
+        );
+      }
+
+      // The product must have a real price somewhere in the DB (base or a
+      // variant). This catches unpriced products even if the client lied.
+      const product = productByKey.get(item.id) || productByKey.get(item.slug);
+      if (product) {
+        const candidatePrices = [
+          Number(product.price),
+          ...(product.product_variants || []).map((v: any) => Number(v.price)),
+        ].filter((n) => Number.isFinite(n));
+        const maxPrice = candidatePrices.length > 0 ? Math.max(...candidatePrices) : 0;
+        if (!isPositivePrice(maxPrice)) {
+          return NextResponse.json(
+            { error: `"${item.name}" is currently unavailable for purchase (no price set). Please remove it from your cart.` },
+            { status: 400 }
+          );
+        }
+      }
+    }
+
     // 1. Create Order
     const { data: order, error: orderError } = await supabaseAdmin
       .from('orders')
@@ -60,9 +121,6 @@ export async function POST(request: Request) {
     }
 
     // 2. Resolve slugs to UUIDs and build order items
-    const isValidUUID = (str: string) =>
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
-
     const productIds = cart.map((i: any) => i.id).filter(isValidUUID);
     const { data: productsData } = productIds.length > 0
       ? await supabaseAdmin.from('products').select('id, metadata').in('id', productIds)

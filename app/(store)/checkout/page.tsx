@@ -244,6 +244,20 @@ export default function CheckoutPage() {
       return;
     }
 
+    // Block checkout if any item has no price / a price of 0.
+    const unpriced = cart.filter((item) => {
+      const price = Number(item.price);
+      return !Number.isFinite(price) || price <= 0;
+    });
+    if (unpriced.length > 0) {
+      alert(
+        `These items are unavailable for purchase and must be removed from your cart:\n\n${unpriced
+          .map((i) => `• ${i.name}`)
+          .join('\n')}`
+      );
+      return;
+    }
+
     setIsLoading(true);
 
     // reCAPTCHA verification

@@ -16,7 +16,7 @@ export type CartItem = {
 
 type CartContextType = {
     cart: CartItem[];
-    addToCart: (item: CartItem) => void;
+    addToCart: (item: CartItem) => boolean;
     removeFromCart: (itemId: string, variant?: string) => void;
     updateQuantity: (itemId: string, quantity: number, variant?: string) => void;
     clearCart: () => void;
@@ -27,6 +27,12 @@ type CartContextType = {
 };
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
+
+/** A purchasable item must have a real, positive price. */
+export function isPurchasablePrice(price: unknown): boolean {
+    const value = Number(price);
+    return Number.isFinite(value) && value > 0;
+}
 
 export function CartProvider({ children }: { children: ReactNode }) {
     const [cart, setCart] = useState<CartItem[]>([]);
@@ -47,7 +53,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
                 // Migrate legacy cart items: if `id` is not a UUID, it's likely a slug
                 const isValidUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
                 const migratedCart = parsed.filter(item => {
-                    if (!item.id || !item.name || !item.price) return false; // Remove corrupted items
+                    if (!item.id || !item.name) return false; // Remove corrupted items
+                    if (!isPurchasablePrice(item.price)) return false; // Drop unpriced / zero-price items
                     if (!isValidUUID(item.id)) {
                         // Legacy item with slug as id - ensure slug is set, then clear
                         // These items will be resolved at checkout via the slug fallback
@@ -82,7 +89,16 @@ export function CartProvider({ children }: { children: ReactNode }) {
         }
     }, [cart, isInitialized]);
 
-    const addToCart = (newItem: CartItem) => {
+    const addToCart = (newItem: CartItem): boolean => {
+        // Block items with no price or a price of 0 — they cannot be purchased.
+        if (!isPurchasablePrice(newItem.price)) {
+            console.warn(`Blocked add-to-cart for unpriced item: ${newItem.name} (${newItem.id})`);
+            if (typeof window !== 'undefined') {
+                alert('This item is currently unavailable for purchase (no price set).');
+            }
+            return false;
+        }
+
         setCart((prevCart) => {
             const existingItemIndex = prevCart.findIndex(
                 (item) => item.id === newItem.id && item.variant === newItem.variant
@@ -104,6 +120,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
         });
 
         setIsCartOpen(true); // Open cart when item is added
+        return true;
     };
 
     const removeFromCart = (itemId: string, variant?: string) => {

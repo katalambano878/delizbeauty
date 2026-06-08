@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import LazyImage from './LazyImage';
-import { useCart } from '@/context/CartContext';
+import { useCart, isPurchasablePrice } from '@/context/CartContext';
 
 // Map common color names to hex values for swatches
 const COLOR_MAP: Record<string, string> = {
@@ -78,6 +78,8 @@ export default function ProductCard({
   const displayPrice = hasVariants && minVariantPrice ? minVariantPrice : price;
   const discount = originalPrice ? Math.round((1 - displayPrice / originalPrice) * 100) : 0;
   const MAX_SWATCHES = 5;
+  // Non-variant products can only be quick-added when they have a real price.
+  const canQuickAdd = !hasVariants && isPurchasablePrice(price);
 
   const formatPrice = (val: number) => `GH\u20B5${val.toFixed(2)}`;
 
@@ -116,7 +118,7 @@ export default function ProductCard({
                 <i className="ri-list-check"></i>
                 <span>Select Options</span>
               </span>
-            ) : (
+            ) : canQuickAdd ? (
               <button
                 onClick={(e) => {
                   e.preventDefault();
@@ -127,6 +129,10 @@ export default function ProductCard({
                 <i className="ri-shopping-cart-2-line"></i>
                 <span>{moq > 1 ? `Add ${moq} to Cart` : 'Quick Add'}</span>
               </button>
+            ) : (
+              <span className="w-full bg-white/90 text-gray-400 py-3 rounded-lg font-medium shadow-lg flex items-center justify-center text-sm cursor-not-allowed">
+                Unavailable
+              </span>
             )}
           </div>
         )}
@@ -189,10 +195,10 @@ export default function ProductCard({
                 e.preventDefault();
                 addToCart({ id, name, price, image, quantity: moq, slug, maxStock, moq });
               }}
-              disabled={!inStock}
+              disabled={!inStock || !canQuickAdd}
               className="w-full border border-gray-200 text-gray-900 py-2.5 rounded-lg text-sm font-medium hover:bg-gray-50 active:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {moq > 1 ? `Add ${moq} to Cart` : 'Add to Cart'}
+              {!canQuickAdd ? 'Unavailable' : moq > 1 ? `Add ${moq} to Cart` : 'Add to Cart'}
             </button>
           )}
         </div>

@@ -9,7 +9,7 @@ import ProductCard from '@/components/ProductCard';
 import ProductReviews from '@/components/ProductReviews';
 import { StructuredData, generateProductSchema, generateBreadcrumbSchema } from '@/components/SEOHead';
 import { notFound } from 'next/navigation';
-import { useCart } from '@/context/CartContext';
+import { useCart, isPurchasablePrice } from '@/context/CartContext';
 import { usePageTitle } from '@/hooks/usePageTitle';
 
 // Map common color names to hex values for the swatch preview
@@ -217,24 +217,22 @@ export default function ProductDetailClient({ slug }: { slug: string }) {
   // Determine the active price: variant price if selected, otherwise base price
   const activePrice = selectedVariant?.price ?? product?.price ?? 0;
   const activeStock = selectedVariant ? (selectedVariant.stock ?? selectedVariant.quantity ?? product?.stockCount ?? 0) : (product?.stockCount ?? 0);
+  const hasValidPrice = isPurchasablePrice(activePrice);
 
-  const handleAddToCart = () => {
-    if (!product) return;
-    if (needsVariantSelection) return; // Safety check
+  // Returns whether the item was actually added (Buy Now uses this so it
+  // never navigates to checkout when the add was blocked).
+  const addToCartGuarded = (): boolean => {
+    if (!product || needsVariantSelection || !hasValidPrice) return false;
 
     // Build variant display string: "Color / Name" or just "Name" or just "Color"
     let variantLabel: string | undefined;
     if (selectedVariant) {
       const color = selectedVariant.color || selectedColor || '';
       const name = selectedVariant.name || '';
-      if (color && name) {
-        variantLabel = `${color} / ${name}`;
-      } else {
-        variantLabel = color || name || undefined;
-      }
+      variantLabel = color && name ? `${color} / ${name}` : color || name || undefined;
     }
 
-    addToCart({
+    return addToCart({
       id: product.id,
       name: product.name,
       price: activePrice,
@@ -243,13 +241,18 @@ export default function ProductDetailClient({ slug }: { slug: string }) {
       variant: variantLabel,
       slug: product.slug,
       maxStock: activeStock,
-      moq: product.moq || 1
+      moq: product.moq || 1,
     });
   };
 
+  const handleAddToCart = () => {
+    addToCartGuarded();
+  };
+
   const handleBuyNow = () => {
-    handleAddToCart();
-    window.location.href = '/checkout';
+    if (addToCartGuarded()) {
+      window.location.href = '/checkout';
+    }
   };
 
   if (loading) {
@@ -650,14 +653,14 @@ export default function ProductDetailClient({ slug }: { slug: string }) {
 
                 <div className="flex flex-col sm:flex-row gap-4 mb-8">
                   <button
-                    disabled={activeStock === 0 || needsVariantSelection || needsColorSelection}
-                    className={`flex-1 bg-gray-900 hover:bg-gray-900 text-white py-4 rounded-lg font-semibold transition-colors flex items-center justify-center space-x-2 text-lg whitespace-nowrap cursor-pointer ${(activeStock === 0 || needsVariantSelection || needsColorSelection) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    disabled={activeStock === 0 || needsVariantSelection || needsColorSelection || !hasValidPrice}
+                    className={`flex-1 bg-gray-900 hover:bg-gray-900 text-white py-4 rounded-lg font-semibold transition-colors flex items-center justify-center space-x-2 text-lg whitespace-nowrap cursor-pointer ${(activeStock === 0 || needsVariantSelection || needsColorSelection || !hasValidPrice) ? 'opacity-50 cursor-not-allowed' : ''}`}
                     onClick={handleAddToCart}
                   >
                     <i className="ri-shopping-cart-line text-xl"></i>
-                    <span>{activeStock === 0 ? 'Out of Stock' : needsColorSelection ? 'Select a Color' : needsVariantSelection ? 'Select a Variant' : 'Add to Cart'}</span>
+                    <span>{activeStock === 0 ? 'Out of Stock' : needsColorSelection ? 'Select a Color' : needsVariantSelection ? 'Select a Variant' : !hasValidPrice ? 'Unavailable' : 'Add to Cart'}</span>
                   </button>
-                  {activeStock > 0 && !needsVariantSelection && !needsColorSelection && (
+                  {activeStock > 0 && !needsVariantSelection && !needsColorSelection && hasValidPrice && (
                     <button
                       onClick={handleBuyNow}
                       className="sm:w-auto bg-gray-900 hover:bg-gray-800 text-white px-8 py-4 rounded-lg font-semibold transition-colors whitespace-nowrap cursor-pointer"
