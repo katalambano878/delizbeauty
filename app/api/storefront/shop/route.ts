@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase-admin';
 import {
   buildProductTextOrFilter,
   expandSearchTerms,
+  fuzzyRankResults,
   rankSearchResults,
   scoreCategoryMatch,
   tokenizeSearchQuery,
@@ -40,10 +41,14 @@ function applyPriceAndRating<T extends { price?: number; rating_avg?: number }>(
 
 function sortProducts(products: any[], sortBy: string, useRelevance: boolean) {
   if (useRelevance) {
+    // Deterministic ordering so each infinite-scroll page slices the same list:
+    // score desc, then newest, then id as a final stable tiebreaker.
     return products.sort((a, b) => {
       const scoreDiff = (b.searchScore ?? 0) - (a.searchScore ?? 0);
       if (scoreDiff !== 0) return scoreDiff;
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      const dateDiff = new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      if (dateDiff !== 0) return dateDiff;
+      return String(a.id).localeCompare(String(b.id));
     });
   }
 
@@ -74,6 +79,7 @@ async function fetchProductsByCategoryIds(categoryIds: string[]) {
     .select(PRODUCT_SELECT_CATEGORY_INNER)
     .eq('status', 'active')
     .in('product_categories.category_id', categoryIds)
+    .order('created_at', { ascending: false })
     .limit(500);
 
   if (error) {
@@ -82,6 +88,27 @@ async function fetchProductsByCategoryIds(categoryIds: string[]) {
   }
 
   return data || [];
+}
+
+// Typo-tolerant fallback: pull a broad active set and rank by edit distance.
+// Only runs when exact/synonym/category recall finds nothing.
+async function fuzzyFallbackProducts(tokens: string[]) {
+  const usableTokens = tokens.filter((token) => token.length >= 3);
+  if (usableTokens.length === 0) return [];
+
+  const { data, error } = await supabaseAdmin
+    .from('products')
+    .select(PRODUCT_SELECT)
+    .eq('status', 'active')
+    .order('created_at', { ascending: false })
+    .limit(800);
+
+  if (error) {
+    console.error('[Storefront Shop API] Fuzzy fallback error:', error);
+    return [];
+  }
+
+  return fuzzyRankResults(data || [], usableTokens);
 }
 
 async function runSmartSearch(params: {
@@ -112,6 +139,7 @@ async function runSmartSearch(params: {
       .select(PRODUCT_SELECT)
       .eq('status', 'active')
       .or(orFilter)
+      .order('created_at', { ascending: false })
       .limit(500),
     supabaseAdmin
       .from('categories')
@@ -149,7 +177,14 @@ async function runSmartSearch(params: {
     merged.set(product.id, product);
   }
 
-  let ranked = rankSearchResults(Array.from(merged.values()), search, effectiveTokens, expandedTerms);
+  let ranked: any[] = rankSearchResults(Array.from(merged.values()), search, effectiveTokens, expandedTerms);
+  let usedFuzzy = false;
+
+  // Nothing matched exactly/by synonym/category — try typo tolerance.
+  if (ranked.length === 0) {
+    ranked = await fuzzyFallbackProducts(effectiveTokens);
+    usedFuzzy = ranked.length > 0;
+  }
 
   if (categoryFilterSlugs.length > 0) {
     ranked = ranked.filter((product) => {
@@ -172,7 +207,7 @@ async function runSmartSearch(params: {
   return {
     data: paginated,
     count: total,
-    searchMode: 'smart' as const,
+    searchMode: usedFuzzy ? ('fuzzy' as const) : ('smart' as const),
     matchedCategories: scoredCategories.slice(0, 5).map((row) => row.category.name),
   };
 }

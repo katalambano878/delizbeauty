@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase-admin';
 import {
   buildProductTextOrFilter,
   expandSearchTerms,
+  fuzzyRankResults,
   rankSearchResults,
   scoreCategoryMatch,
   tokenizeSearchQuery,
@@ -14,8 +15,25 @@ const PRODUCT_SELECT = `
   slug,
   price,
   compare_at_price,
+  sku,
+  brand,
+  tags,
   categories(name, slug),
-  product_categories(categories(name, slug)),
+  product_categories(category_id, categories(name, slug)),
+  product_images(url, position)
+`;
+
+const PRODUCT_SELECT_CATEGORY_INNER = `
+  id,
+  name,
+  slug,
+  price,
+  compare_at_price,
+  sku,
+  brand,
+  tags,
+  categories(name, slug),
+  product_categories!inner(category_id, categories!inner(name, slug)),
   product_images(url, position)
 `;
 
@@ -54,6 +72,7 @@ export async function GET(request: Request) {
         .select(PRODUCT_SELECT)
         .eq('status', 'active')
         .or(orFilter)
+        .order('created_at', { ascending: false })
         .limit(120),
       supabaseAdmin
         .from('categories')
@@ -78,12 +97,10 @@ export async function GET(request: Request) {
       const categoryIds = scoredCategories.slice(0, 3).map((row) => row.category.id);
       const { data } = await supabaseAdmin
         .from('products')
-        .select(PRODUCT_SELECT.replace(
-          'product_categories(category_id, categories(name, slug))',
-          'product_categories!inner(category_id, categories!inner(name, slug))'
-        ))
+        .select(PRODUCT_SELECT_CATEGORY_INNER)
         .eq('status', 'active')
         .in('product_categories.category_id', categoryIds)
+        .order('created_at', { ascending: false })
         .limit(60);
       categoryProducts = data || [];
     }
@@ -93,12 +110,28 @@ export async function GET(request: Request) {
       merged.set(product.id, product);
     }
 
-    const rankedProducts = rankSearchResults(
+    let ranked: any[] = rankSearchResults(
       Array.from(merged.values()),
       query,
       effectiveTokens,
       expandedTerms
-    )
+    );
+
+    // Typo-tolerant fallback so the dropdown still helps on misspellings.
+    if (ranked.length === 0) {
+      const fuzzyTokens = effectiveTokens.filter((token) => token.length >= 3);
+      if (fuzzyTokens.length > 0) {
+        const { data: fuzzyCandidates } = await supabaseAdmin
+          .from('products')
+          .select(PRODUCT_SELECT)
+          .eq('status', 'active')
+          .order('created_at', { ascending: false })
+          .limit(400);
+        ranked = fuzzyRankResults((fuzzyCandidates || []) as any[], fuzzyTokens);
+      }
+    }
+
+    const rankedProducts = ranked
       .slice(0, limit)
       .map((product) => {
         const images = Array.isArray(product.product_images)

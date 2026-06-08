@@ -1,5 +1,5 @@
 /**
- * Storefront product search — broad recall + relevance scoring.
+ * Storefront product search — broad recall + relevance scoring + typo tolerance.
  * Matches across name, descriptions, tags, SKU, brand, categories, and variants.
  */
 
@@ -125,6 +125,8 @@ export const SEARCH_SYNONYMS: Record<string, string[]> = {
   synthetic: ['hair', 'braid', 'wig'],
   perfume: ['fragrance', 'scent', 'cologne'],
   fragrance: ['perfume', 'scent'],
+  shampoo: ['conditioner', 'wash', 'cleanser'],
+  conditioner: ['shampoo', 'treatment'],
 };
 
 const TEXT_FIELDS = [
@@ -137,6 +139,9 @@ const TEXT_FIELDS = [
   'seo_title',
   'seo_description',
 ] as const;
+
+/** Keep the PostgREST `or()` filter well under URL limits. */
+const MAX_OR_TERMS = 24;
 
 export function normalizeSearchText(value: string): string {
   return value
@@ -191,31 +196,43 @@ function pluralize(token: string): string | null {
   return `${token}s`;
 }
 
-export function expandSearchTerms(tokens: string[]): string[] {
-  const expanded = new Set<string>();
+/** All lexical variants of a single token (itself + singular/plural). */
+export function tokenVariants(token: string): string[] {
+  const variants = new Set<string>([token]);
+  const singular = singularize(token);
+  if (singular) variants.add(singular);
+  const plural = pluralize(token);
+  if (plural) variants.add(plural);
+  return Array.from(variants);
+}
 
+/** Map each original token to its full expansion set (variants + synonyms). */
+export function expandTokenMap(tokens: string[]): Map<string, string[]> {
+  const map = new Map<string, string[]>();
   for (const token of tokens) {
-    expanded.add(token);
-
-    const singular = singularize(token);
-    if (singular) expanded.add(singular);
-
-    const plural = pluralize(token);
-    if (plural) expanded.add(plural);
-
-    const synonyms = SEARCH_SYNONYMS[token] || [];
-    for (const synonym of synonyms) {
+    const expanded = new Set<string>(tokenVariants(token));
+    for (const synonym of SEARCH_SYNONYMS[token] || []) {
       if (synonym.length >= 2) expanded.add(synonym);
     }
+    map.set(token, Array.from(expanded));
   }
+  return map;
+}
 
+export function expandSearchTerms(tokens: string[]): string[] {
+  const expanded = new Set<string>();
+  for (const variants of expandTokenMap(tokens).values()) {
+    for (const term of variants) expanded.add(term);
+  }
   return Array.from(expanded);
 }
 
 export function buildProductTextOrFilter(terms: string[]): string {
   const parts: string[] = [];
+  // Longest terms first so the most specific matches survive the cap.
+  const bounded = [...terms].sort((a, b) => b.length - a.length).slice(0, MAX_OR_TERMS);
 
-  for (const term of terms) {
+  for (const term of bounded) {
     const escaped = escapeIlikePattern(term);
     for (const field of TEXT_FIELDS) {
       parts.push(`${field}.ilike.%${escaped}%`);
@@ -247,39 +264,149 @@ export type SearchableProduct = {
   }[] | null;
 };
 
-function getCategoryNames(product: SearchableProduct): string[] {
-  const names: string[] = [];
-  if (product.categories?.name) names.push(String(product.categories.name));
+type NormalizedProduct = {
+  name: string;
+  categories: string[];
+  tags: string[];
+  sku: string;
+  brand: string;
+  vendor: string;
+  description: string;
+  shortDescription: string;
+  seoTitle: string;
+  seoDescription: string;
+  variants: string;
+  haystack: string;
+  haystackWords: string[];
+};
+
+// Memoize the normalized projection so a single request never re-normalizes
+// the same product across exact + fuzzy passes.
+const normalizedCache = new WeakMap<object, NormalizedProduct>();
+
+function getNormalizedProduct(product: SearchableProduct): NormalizedProduct {
+  const cached = normalizedCache.get(product as object);
+  if (cached) return cached;
+
+  const categories: string[] = [];
+  if (product.categories?.name) categories.push(normalizeSearchText(String(product.categories.name)));
   for (const row of product.product_categories || []) {
-    if (row?.categories?.name) names.push(String(row.categories.name));
+    if (row?.categories?.name) categories.push(normalizeSearchText(String(row.categories.name)));
   }
-  return names;
-}
 
-function getSearchableHaystack(product: SearchableProduct): string {
-  const categoryNames = getCategoryNames(product).join(' ');
-  const tagText = (product.tags || []).join(' ');
-  const variantText = (product.product_variants || [])
-    .map((variant) => [variant.name, variant.option1, variant.option2, variant.sku].filter(Boolean).join(' '))
-    .join(' ');
-
-  return normalizeSearchText(
-    [
-      product.name,
-      product.description,
-      product.short_description,
-      product.sku,
-      product.brand,
-      product.vendor,
-      product.seo_title,
-      product.seo_description,
-      tagText,
-      categoryNames,
-      variantText,
-    ]
-      .filter(Boolean)
+  const tags = (product.tags || []).map((tag) => normalizeSearchText(String(tag))).filter(Boolean);
+  const variants = normalizeSearchText(
+    (product.product_variants || [])
+      .map((variant) => [variant.name, variant.option1, variant.option2, variant.sku].filter(Boolean).join(' '))
       .join(' ')
   );
+
+  const name = normalizeSearchText(product.name || '');
+  const description = normalizeSearchText(product.description || '');
+  const shortDescription = normalizeSearchText(product.short_description || '');
+  const sku = normalizeSearchText(product.sku || '');
+  const brand = normalizeSearchText(product.brand || '');
+  const vendor = normalizeSearchText(product.vendor || '');
+  const seoTitle = normalizeSearchText(product.seo_title || '');
+  const seoDescription = normalizeSearchText(product.seo_description || '');
+
+  const haystack = [
+    name,
+    description,
+    shortDescription,
+    sku,
+    brand,
+    vendor,
+    seoTitle,
+    seoDescription,
+    tags.join(' '),
+    categories.join(' '),
+    variants,
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  const haystackWords = Array.from(
+    new Set(haystack.split(' ').filter((word) => word.length >= 2))
+  );
+
+  const normalized: NormalizedProduct = {
+    name,
+    categories,
+    tags,
+    sku,
+    brand,
+    vendor,
+    description,
+    shortDescription,
+    seoTitle,
+    seoDescription,
+    variants,
+    haystack,
+    haystackWords,
+  };
+
+  normalizedCache.set(product as object, normalized);
+  return normalized;
+}
+
+function getCategoryNames(product: SearchableProduct): string[] {
+  return getNormalizedProduct(product).categories;
+}
+
+/**
+ * Bounded Damerau (optimal string alignment) distance — counts an adjacent
+ * transposition as a single edit and bails out as soon as it exceeds `max`.
+ */
+export function boundedLevenshtein(a: string, b: string, max: number): number {
+  if (a === b) return 0;
+  const aLen = a.length;
+  const bLen = b.length;
+  if (Math.abs(aLen - bLen) > max) return max + 1;
+  if (aLen === 0) return bLen;
+  if (bLen === 0) return aLen;
+
+  let prevPrev = new Array<number>(bLen + 1).fill(0);
+  let prev = new Array<number>(bLen + 1);
+  let curr = new Array<number>(bLen + 1);
+  for (let j = 0; j <= bLen; j++) prev[j] = j;
+
+  for (let i = 1; i <= aLen; i++) {
+    curr[0] = i;
+    let rowMin = curr[0];
+    const aChar = a.charCodeAt(i - 1);
+    const aPrev = i > 1 ? a.charCodeAt(i - 2) : -1;
+    for (let j = 1; j <= bLen; j++) {
+      const bChar = b.charCodeAt(j - 1);
+      const cost = aChar === bChar ? 0 : 1;
+      let value = Math.min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost);
+      if (i > 1 && j > 1 && aChar === b.charCodeAt(j - 2) && aPrev === bChar) {
+        value = Math.min(value, prevPrev[j - 2] + 1);
+      }
+      curr[j] = value;
+      if (value < rowMin) rowMin = value;
+    }
+    if (rowMin > max) return max + 1;
+    const tmp = prevPrev;
+    prevPrev = prev;
+    prev = curr;
+    curr = tmp;
+  }
+
+  return prev[bLen];
+}
+
+/** True when two equal-length words share the exact same character multiset. */
+function isAnagram(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  return a.split('').sort().join('') === b.split('').sort().join('');
+}
+
+/** Distance tolerance scales with word length so short words stay strict. */
+function fuzzyThreshold(token: string): number {
+  if (token.length <= 2) return 0;
+  if (token.length <= 5) return 1;
+  return 2;
 }
 
 export function scoreProductMatch(
@@ -288,77 +415,108 @@ export function scoreProductMatch(
   tokens: string[],
   expandedTerms: string[]
 ): number {
+  const np = getNormalizedProduct(product);
+  if (!np.haystack) return 0;
+
   const normalizedQuery = normalizeSearchText(query);
-  const name = normalizeSearchText(product.name || '');
-  const haystack = getSearchableHaystack(product);
-
-  if (!haystack) return 0;
-
+  const name = np.name;
   let score = 0;
 
   if (normalizedQuery && name === normalizedQuery) score += 120;
-  if (normalizedQuery && name.startsWith(normalizedQuery)) score += 80;
-  if (normalizedQuery && name.includes(normalizedQuery)) score += 55;
-  if (normalizedQuery && haystack.includes(normalizedQuery)) score += 35;
+  else if (normalizedQuery && name.startsWith(normalizedQuery)) score += 80;
+  else if (normalizedQuery && name.includes(normalizedQuery)) score += 55;
+  if (normalizedQuery && np.haystack.includes(normalizedQuery)) score += 35;
 
-  const allTokens = expandedTerms.length > 0 ? expandedTerms : tokens;
-  let matchedTokenCount = 0;
+  const allTerms = expandedTerms.length > 0 ? expandedTerms : tokens;
 
-  for (const term of allTokens) {
+  for (const term of allTerms) {
     let termScore = 0;
 
-    if (name === term) termScore = Math.max(termScore, 40);
-    if (name.startsWith(term)) termScore = Math.max(termScore, 28);
-    if (name.includes(term)) termScore = Math.max(termScore, 22);
+    if (name === term) termScore = 40;
+    else if (name.startsWith(term)) termScore = 28;
+    else if (name.includes(term)) termScore = 22;
 
-    for (const categoryName of getCategoryNames(product)) {
-      const normalizedCategory = normalizeSearchText(categoryName);
-      if (normalizedCategory === term) termScore = Math.max(termScore, 26);
-      if (normalizedCategory.includes(term)) termScore = Math.max(termScore, 18);
+    for (const category of np.categories) {
+      if (category === term) termScore = Math.max(termScore, 26);
+      else if (category.includes(term)) termScore = Math.max(termScore, 18);
     }
 
-    if ((product.tags || []).some((tag) => normalizeSearchText(tag).includes(term))) {
-      termScore = Math.max(termScore, 16);
+    if (np.tags.some((tag) => tag.includes(term))) termScore = Math.max(termScore, 16);
+    if (np.sku.includes(term)) termScore = Math.max(termScore, 20);
+    if (np.brand.includes(term)) termScore = Math.max(termScore, 14);
+    if (np.vendor.includes(term)) termScore = Math.max(termScore, 12);
+    if (np.variants.includes(term)) termScore = Math.max(termScore, 10);
+    if (np.shortDescription.includes(term)) termScore = Math.max(termScore, 9);
+    if (np.description.includes(term)) termScore = Math.max(termScore, 8);
+    if (np.seoTitle.includes(term)) termScore = Math.max(termScore, 7);
+    if (np.seoDescription.includes(term)) termScore = Math.max(termScore, 6);
+    if (termScore === 0 && np.haystack.includes(term)) termScore = 4;
+
+    score += termScore;
+  }
+
+  // Multi-word coverage bonus based on the user's ORIGINAL words (not synonyms),
+  // so "lace frontal wig" rewards products hitting all three concepts.
+  if (tokens.length > 1) {
+    let matchedOriginal = 0;
+    for (const token of tokens) {
+      const variants = tokenVariants(token);
+      if (variants.some((variant) => np.haystack.includes(variant))) matchedOriginal += 1;
     }
+    if (matchedOriginal === tokens.length) score += 25;
+    else if (matchedOriginal >= Math.ceil(tokens.length * 0.6)) score += 12;
+  }
 
-    if (normalizeSearchText(product.sku || '').includes(term)) termScore = Math.max(termScore, 20);
-    if (normalizeSearchText(product.brand || '').includes(term)) termScore = Math.max(termScore, 14);
-    if (normalizeSearchText(product.vendor || '').includes(term)) termScore = Math.max(termScore, 12);
+  return score;
+}
 
-    for (const variant of product.product_variants || []) {
-      const variantHaystack = normalizeSearchText(
-        [variant.name, variant.option1, variant.option2, variant.sku].filter(Boolean).join(' ')
-      );
-      if (variantHaystack.includes(term)) {
-        termScore = Math.max(termScore, 10);
-        break;
+/** Typo-tolerant score; only used as a fallback when exact recall is thin. */
+export function scoreProductFuzzy(product: SearchableProduct, tokens: string[]): number {
+  const np = getNormalizedProduct(product);
+  if (!np.haystack || np.haystackWords.length === 0) return 0;
+
+  const nameWords = np.name.split(' ').filter(Boolean);
+  let score = 0;
+  let matchedTokens = 0;
+
+  for (const token of tokens) {
+    if (token.length < 3) continue;
+
+    // Short words (3 chars) only accept transposition typos (e.g. "wgi" -> "wig")
+    // to avoid the false positives that single-substitution would cause.
+    if (token.length === 3) {
+      const anagramHit = np.haystackWords.some((word) => isAnagram(token, word));
+      if (anagramHit) {
+        matchedTokens += 1;
+        const inName = nameWords.some((word) => isAnagram(token, word));
+        score += 8 + (inName ? 4 : 0);
       }
+      continue;
     }
 
-    if (normalizeSearchText(product.description || '').includes(term)) {
-      termScore = Math.max(termScore, 8);
-    }
-    if (normalizeSearchText(product.short_description || '').includes(term)) {
-      termScore = Math.max(termScore, 9);
-    }
-    if (normalizeSearchText(product.seo_title || '').includes(term)) {
-      termScore = Math.max(termScore, 7);
-    }
-    if (normalizeSearchText(product.seo_description || '').includes(term)) {
-      termScore = Math.max(termScore, 6);
+    const max = fuzzyThreshold(token);
+    if (max === 0) continue;
+
+    let best = max + 1;
+    for (const word of np.haystackWords) {
+      if (Math.abs(word.length - token.length) > max) continue;
+      const distance = boundedLevenshtein(token, word, max);
+      if (distance < best) best = distance;
+      if (best === 1) break;
     }
 
-    if (haystack.includes(term)) termScore = Math.max(termScore, 4);
-
-    if (termScore > 0) {
-      matchedTokenCount += 1;
-      score += termScore;
+    if (best <= max) {
+      matchedTokens += 1;
+      const proximity = best === 1 ? 12 : 7;
+      const inName = nameWords.some(
+        (word) => Math.abs(word.length - token.length) <= max && boundedLevenshtein(token, word, max) <= max
+      );
+      score += proximity + (inName ? 6 : 0);
     }
   }
 
-  if (tokens.length > 1 && matchedTokenCount === tokens.length) score += 25;
-  if (tokens.length > 1 && matchedTokenCount >= Math.ceil(tokens.length * 0.6)) score += 12;
-
+  if (matchedTokens === 0) return 0;
+  if (tokens.length > 1 && matchedTokens === tokens.length) score += 10;
   return score;
 }
 
@@ -395,6 +553,20 @@ export function rankSearchResults<T extends SearchableProduct>(
     .map((product) => ({
       ...product,
       searchScore: scoreProductMatch(product, query, tokens, expandedTerms),
+    }))
+    .filter((product) => product.searchScore > 0)
+    .sort((a, b) => b.searchScore - a.searchScore);
+}
+
+/** Rank a candidate set purely by typo-tolerant similarity. */
+export function fuzzyRankResults<T extends SearchableProduct>(
+  products: T[],
+  tokens: string[]
+): Array<T & { searchScore: number }> {
+  return products
+    .map((product) => ({
+      ...product,
+      searchScore: scoreProductFuzzy(product, tokens),
     }))
     .filter((product) => product.searchScore > 0)
     .sort((a, b) => b.searchScore - a.searchScore);
