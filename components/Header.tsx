@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import MiniCart from './MiniCart';
 import { useCart } from '@/context/CartContext';
@@ -39,6 +39,20 @@ export default function Header() {
   const [wishlistCount, setWishlistCount] = useState(0);
   const [user, setUser] = useState<any>(null);
   const [isScrolled, setIsScrolled] = useState(false);
+  const [searchSuggestions, setSearchSuggestions] = useState<{
+    products: Array<{
+      id: string;
+      slug: string;
+      name: string;
+      price: number;
+      image: string | null;
+      categories: string[];
+    }>;
+    categories: Array<{ id: string; name: string; slug: string }>;
+  }>({ products: [], categories: [] });
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
 
   const { cartCount, isCartOpen, setIsCartOpen } = useCart();
   const { getSetting } = useCMS();
@@ -79,11 +93,139 @@ export default function Header() {
     };
   }, []);
 
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (searchQuery.trim()) {
-      window.location.href = `/shop?search=${encodeURIComponent(searchQuery)}`;
+  const handleSearch = (e?: React.FormEvent, queryOverride?: string) => {
+    e?.preventDefault();
+    const query = (queryOverride ?? searchQuery).trim();
+    if (query) {
+      window.location.href = `/shop?search=${encodeURIComponent(query)}`;
     }
+  };
+
+  useEffect(() => {
+    const query = searchQuery.trim();
+    if (query.length < 2) {
+      setSearchSuggestions({ products: [], categories: [] });
+      setSearchLoading(false);
+      return;
+    }
+
+    setSearchLoading(true);
+    const timer = window.setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/storefront/search/suggest?q=${encodeURIComponent(query)}&limit=6`);
+        const data = await res.json();
+        if (res.ok) {
+          setSearchSuggestions({
+            products: data.products || [],
+            categories: data.categories || [],
+          });
+        }
+      } catch (error) {
+        console.error('Search suggest error:', error);
+      } finally {
+        setSearchLoading(false);
+      }
+    }, 220);
+
+    return () => window.clearTimeout(timer);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(event.target as Node)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const renderSearchSuggestions = (onNavigate?: () => void) => {
+    const hasResults =
+      searchSuggestions.products.length > 0 || searchSuggestions.categories.length > 0;
+
+    if (searchQuery.trim().length < 2) return null;
+
+    return (
+      <div className="absolute left-0 right-0 top-full mt-2 bg-white rounded-2xl border border-gray-200 shadow-2xl overflow-hidden z-[120]">
+        {searchLoading && (
+          <div className="px-4 py-3 text-sm text-gray-500">Searching...</div>
+        )}
+
+        {!searchLoading && !hasResults && (
+          <div className="px-4 py-5 text-sm text-gray-500 text-center">
+            No matches yet. Press enter to search everything for &ldquo;{searchQuery.trim()}&rdquo;.
+          </div>
+        )}
+
+        {!searchLoading && searchSuggestions.categories.length > 0 && (
+          <div className="px-3 py-2 border-b border-gray-100">
+            <p className="px-2 py-1 text-xs font-semibold uppercase tracking-wide text-gray-400">Categories</p>
+            {searchSuggestions.categories.map((category) => (
+              <Link
+                key={category.id}
+                href={`/shop?category=${encodeURIComponent(category.slug)}`}
+                onClick={() => {
+                  setShowSuggestions(false);
+                  onNavigate?.();
+                }}
+                className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-gray-50 transition-colors"
+              >
+                <i className="ri-folder-3-line text-gray-400"></i>
+                <span className="text-sm font-medium text-gray-900">{category.name}</span>
+              </Link>
+            ))}
+          </div>
+        )}
+
+        {!searchLoading && searchSuggestions.products.length > 0 && (
+          <div className="px-3 py-2">
+            <p className="px-2 py-1 text-xs font-semibold uppercase tracking-wide text-gray-400">Products</p>
+            {searchSuggestions.products.map((product) => (
+              <Link
+                key={product.id}
+                href={`/product/${product.slug}`}
+                onClick={() => {
+                  setShowSuggestions(false);
+                  onNavigate?.();
+                }}
+                className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-gray-50 transition-colors"
+              >
+                <div className="w-12 h-12 rounded-lg bg-gray-100 overflow-hidden flex-shrink-0">
+                  {product.image ? (
+                    <img src={product.image} alt={product.name} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-gray-300">
+                      <i className="ri-image-line"></i>
+                    </div>
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-gray-900 truncate">{product.name}</p>
+                  {product.categories.length > 0 && (
+                    <p className="text-xs text-gray-500 truncate">{product.categories.join(', ')}</p>
+                  )}
+                </div>
+                <p className="text-sm font-semibold text-gray-900 whitespace-nowrap">GH₵{Number(product.price).toFixed(0)}</p>
+              </Link>
+            ))}
+          </div>
+        )}
+
+        {!searchLoading && searchQuery.trim().length >= 2 && (
+          <button
+            type="button"
+            onClick={() => {
+              handleSearch(undefined, searchQuery);
+              onNavigate?.();
+            }}
+            className="w-full px-4 py-3 text-sm font-semibold text-gray-900 bg-gray-50 hover:bg-gray-100 border-t border-gray-100 transition-colors"
+          >
+            View all results for &ldquo;{searchQuery.trim()}&rdquo;
+          </button>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -144,17 +286,27 @@ export default function Header() {
                 </button>
 
                 {/* Desktop Search Input */}
-                <div className="hidden lg:block relative group">
+                <div className="hidden lg:block relative group" ref={searchContainerRef}>
                   <input
                     type="search"
                     placeholder="Search for perfection..."
                     className="w-56 focus:w-80 pl-11 pr-4 py-2.5 bg-gray-50/80 hover:bg-gray-100/80 focus:bg-white border border-gray-200/80 focus:border-black rounded-full transition-all duration-500 ease-out text-sm outline-none placeholder-gray-400 font-medium"
                     aria-label="Search products"
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleSearch(e)}
+                    onChange={(e) => {
+                      setSearchQuery(e.target.value);
+                      setShowSuggestions(true);
+                    }}
+                    onFocus={() => setShowSuggestions(true)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        setShowSuggestions(false);
+                        handleSearch(e);
+                      }
+                    }}
                   />
                   <i className="ri-search-line absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-black transition-colors text-lg"></i>
+                  {showSuggestions && renderSearchSuggestions()}
                 </div>
 
                 {/* Wishlist */}
@@ -236,11 +388,15 @@ export default function Header() {
                 </button>
               </div>
               <form onSubmit={handleSearch}>
-                <div className="relative group">
+                <div className="relative group" ref={searchContainerRef}>
                   <input
                     type="text"
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onChange={(e) => {
+                      setSearchQuery(e.target.value);
+                      setShowSuggestions(true);
+                    }}
+                    onFocus={() => setShowSuggestions(true)}
                     placeholder="Search products, brands, categories..."
                     className="w-full px-6 py-4 pr-16 bg-gray-50/50 border-2 border-gray-100 rounded-2xl focus:bg-white focus:ring-4 focus:ring-gray-100/50 focus:border-black text-lg transition-all duration-300 outline-none"
                     autoFocus
@@ -251,6 +407,7 @@ export default function Header() {
                   >
                     <i className="ri-search-line text-xl"></i>
                   </button>
+                  {showSuggestions && renderSearchSuggestions(() => setIsSearchOpen(false))}
                 </div>
               </form>
             </div>

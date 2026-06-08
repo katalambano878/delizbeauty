@@ -1,23 +1,181 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import {
+  buildProductTextOrFilter,
+  expandSearchTerms,
+  rankSearchResults,
+  scoreCategoryMatch,
+  tokenizeSearchQuery,
+} from '@/lib/product-search';
 
-const SEARCH_STOP_WORDS = new Set([
-  'the',
-  'and',
-  'for',
-  'with',
-  'from',
-  'that',
-  'this',
-  'these',
-  'those',
-  'tool',
-  'tools',
-  'product',
-  'products',
-  'item',
-  'items',
-]);
+const PRODUCT_SELECT = `
+  *,
+  categories(id, name, slug, parent_id),
+  product_categories(category_id, categories(id, name, slug, parent_id)),
+  product_images(url, position),
+  product_variants(id, name, price, quantity, option1, option2, image_url, sort_order, sku)
+`;
+
+const PRODUCT_SELECT_CATEGORY_INNER = `
+  *,
+  categories(id, name, slug, parent_id),
+  product_categories!inner(category_id, categories!inner(id, name, slug, parent_id)),
+  product_images(url, position),
+  product_variants(id, name, price, quantity, option1, option2, image_url, sort_order, sku)
+`;
+
+function applyPriceAndRating<T extends { price?: number; rating_avg?: number }>(
+  products: T[],
+  priceMin: number,
+  priceMax: number,
+  rating: number
+): T[] {
+  return products.filter((product) => {
+    const price = Number(product.price ?? 0);
+    if (priceMax < 5000 && (price < priceMin || price > priceMax)) return false;
+    if (rating > 0 && Number(product.rating_avg ?? 0) < rating) return false;
+    return true;
+  });
+}
+
+function sortProducts(products: any[], sortBy: string, useRelevance: boolean) {
+  if (useRelevance) {
+    return products.sort((a, b) => {
+      const scoreDiff = (b.searchScore ?? 0) - (a.searchScore ?? 0);
+      if (scoreDiff !== 0) return scoreDiff;
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+  }
+
+  switch (sortBy) {
+    case 'price-low':
+      return products.sort((a, b) => Number(a.price) - Number(b.price));
+    case 'price-high':
+      return products.sort((a, b) => Number(b.price) - Number(a.price));
+    case 'rating':
+      return products.sort((a, b) => Number(b.rating_avg ?? 0) - Number(a.rating_avg ?? 0));
+    case 'new':
+      return products.sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+    case 'popular':
+    default:
+      return products.sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+  }
+}
+
+async function fetchProductsByCategoryIds(categoryIds: string[]) {
+  if (categoryIds.length === 0) return [];
+
+  const { data, error } = await supabaseAdmin
+    .from('products')
+    .select(PRODUCT_SELECT_CATEGORY_INNER)
+    .eq('status', 'active')
+    .in('product_categories.category_id', categoryIds)
+    .limit(500);
+
+  if (error) {
+    console.error('[Storefront Shop API] Category product search error:', error);
+    return [];
+  }
+
+  return data || [];
+}
+
+async function runSmartSearch(params: {
+  search: string;
+  categoryFilterSlugs: string[];
+  priceMin: number;
+  priceMax: number;
+  rating: number;
+  sortBy: string;
+  page: number;
+  limit: number;
+}) {
+  const { search, categoryFilterSlugs, priceMin, priceMax, rating, sortBy, page, limit } = params;
+  const tokens = tokenizeSearchQuery(search);
+  const fallbackToken = search.trim().length >= 2 ? search.trim().toLowerCase() : '';
+  const effectiveTokens = tokens.length > 0 ? tokens : fallbackToken ? [fallbackToken] : [];
+
+  if (effectiveTokens.length === 0) {
+    return { data: [], count: 0 };
+  }
+
+  const expandedTerms = expandSearchTerms(effectiveTokens);
+  const orFilter = buildProductTextOrFilter(expandedTerms);
+
+  const [textResult, categoriesResult] = await Promise.all([
+    supabaseAdmin
+      .from('products')
+      .select(PRODUCT_SELECT)
+      .eq('status', 'active')
+      .or(orFilter)
+      .limit(500),
+    supabaseAdmin
+      .from('categories')
+      .select('id, name, slug, parent_id')
+      .eq('status', 'active'),
+  ]);
+
+  if (textResult.error) {
+    throw new Error(textResult.error.message);
+  }
+
+  const categoriesData = categoriesResult.data || [];
+  const scoredCategories = categoriesData
+    .map((category) => ({
+      category,
+      score: scoreCategoryMatch(category, search, effectiveTokens, expandedTerms),
+    }))
+    .filter((row) => row.score > 0)
+    .sort((a, b) => b.score - a.score);
+
+  const matchedCategoryIds = new Set<string>(scoredCategories.map((row) => row.category.id));
+  for (const category of categoriesData) {
+    if (category.parent_id && matchedCategoryIds.has(category.parent_id)) {
+      matchedCategoryIds.add(category.id);
+    }
+  }
+
+  let categoryMatchedProducts: any[] = [];
+  if (matchedCategoryIds.size > 0) {
+    categoryMatchedProducts = await fetchProductsByCategoryIds(Array.from(matchedCategoryIds));
+  }
+
+  const merged = new Map<string, any>();
+  for (const product of [...(textResult.data || []), ...categoryMatchedProducts]) {
+    merged.set(product.id, product);
+  }
+
+  let ranked = rankSearchResults(Array.from(merged.values()), search, effectiveTokens, expandedTerms);
+
+  if (categoryFilterSlugs.length > 0) {
+    ranked = ranked.filter((product) => {
+      const slugs = new Set<string>();
+      if (product.categories?.slug) slugs.add(product.categories.slug);
+      for (const row of product.product_categories || []) {
+        if (row?.categories?.slug) slugs.add(row.categories.slug);
+      }
+      return categoryFilterSlugs.some((slug) => slugs.has(slug));
+    });
+  }
+
+  ranked = applyPriceAndRating(ranked, priceMin, priceMax, rating);
+  ranked = sortProducts(ranked, sortBy, true);
+
+  const total = ranked.length;
+  const from = (page - 1) * limit;
+  const paginated = ranked.slice(from, from + limit);
+
+  return {
+    data: paginated,
+    count: total,
+    searchMode: 'smart' as const,
+    matchedCategories: scoredCategories.slice(0, 5).map((row) => row.category.name),
+  };
+}
 
 /**
  * GET /api/storefront/shop
@@ -40,153 +198,79 @@ export async function GET(request: Request) {
   const limit = Math.min(parseInt(searchParams.get('limit') || '9', 10), 100);
   const from = (page - 1) * limit;
   const to = from + limit - 1;
-  const directCategorySlugs = categorySlugs !== 'all'
-    ? categorySlugs.split(',').map((s) => s.trim()).filter(Boolean)
-    : [];
+  const directCategorySlugs =
+    categorySlugs !== 'all'
+      ? categorySlugs.split(',').map((s) => s.trim()).filter(Boolean)
+      : [];
 
   try {
-    const runProductQuery = async (params: { nameSearch?: string; categoryFilterSlugs?: string[] }) => {
-      const hasCategoryFilter = Boolean(params.categoryFilterSlugs && params.categoryFilterSlugs.length > 0);
-      const categoryJoin = hasCategoryFilter
-        ? 'product_categories!inner(category_id, categories!inner(id, name, slug, parent_id))'
-        : 'product_categories(category_id, categories(id, name, slug, parent_id))';
+    if (search.trim()) {
+      const smartResult = await runSmartSearch({
+        search,
+        categoryFilterSlugs: directCategorySlugs,
+        priceMin,
+        priceMax,
+        rating,
+        sortBy,
+        page,
+        limit,
+      });
 
-      let query = supabaseAdmin
-        .from('products')
-        .select(
-          `
-          *,
-          categories(id, name, slug, parent_id),
-          ${categoryJoin},
-          product_images(url, position),
-          product_variants(id, name, price, quantity, option1, option2, image_url, sort_order)
-        `,
-          { count: 'exact' }
-        )
-        .eq('status', 'active');
+      return NextResponse.json(smartResult, {
+        headers: {
+          'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=60',
+        },
+      });
+    }
 
-      if (params.nameSearch?.trim()) {
-        query = query.ilike('name', `%${params.nameSearch.trim()}%`);
-      }
+    const hasCategoryFilter = directCategorySlugs.length > 0;
+    const categoryJoin = hasCategoryFilter
+      ? 'product_categories!inner(category_id, categories!inner(id, name, slug, parent_id))'
+      : 'product_categories(category_id, categories(id, name, slug, parent_id))';
 
-      if (hasCategoryFilter) {
-        query = query.in('product_categories.categories.slug', params.categoryFilterSlugs!);
-      }
+    let query = supabaseAdmin
+      .from('products')
+      .select(PRODUCT_SELECT, { count: 'exact' })
+      .eq('status', 'active');
 
-      if (priceMax < 5000) {
-        query = query.gte('price', priceMin).lte('price', priceMax);
-      }
+    if (hasCategoryFilter) {
+      query = query.in('product_categories.categories.slug', directCategorySlugs);
+    }
 
-      if (rating > 0) {
-        query = query.gte('rating_avg', rating);
-      }
+    if (priceMax < 5000) {
+      query = query.gte('price', priceMin).lte('price', priceMax);
+    }
 
-      switch (sortBy) {
-        case 'price-low':
-          query = query.order('price', { ascending: true });
-          break;
-        case 'price-high':
-          query = query.order('price', { ascending: false });
-          break;
-        case 'rating':
-          query = query.order('rating_avg', { ascending: false });
-          break;
-        case 'new':
-          query = query.order('created_at', { ascending: false });
-          break;
-        case 'popular':
-        default:
-          query = query.order('created_at', { ascending: false });
-          break;
-      }
+    if (rating > 0) {
+      query = query.gte('rating_avg', rating);
+    }
 
-      query = query.range(from, to);
-      return query;
-    };
+    switch (sortBy) {
+      case 'price-low':
+        query = query.order('price', { ascending: true });
+        break;
+      case 'price-high':
+        query = query.order('price', { ascending: false });
+        break;
+      case 'rating':
+        query = query.order('rating_avg', { ascending: false });
+        break;
+      case 'new':
+        query = query.order('created_at', { ascending: false });
+        break;
+      case 'popular':
+      default:
+        query = query.order('created_at', { ascending: false });
+        break;
+    }
 
-    const { data, error, count } = await runProductQuery({
-      nameSearch: search,
-      categoryFilterSlugs: directCategorySlugs,
-    });
+    query = query.range(from, to);
+
+    const { data, error, count } = await query;
 
     if (error) {
       console.error('[Storefront Shop API] Error:', error);
       return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-
-    const hasNoDirectResults = (count ?? 0) === 0;
-    const canUseCategoryFallback = Boolean(search.trim()) && directCategorySlugs.length === 0 && hasNoDirectResults;
-
-    if (canUseCategoryFallback) {
-      const normalizedSearch = search.trim().toLowerCase();
-      const searchTerms = Array.from(
-        new Set(
-          normalizedSearch
-            .split(/[^a-z0-9]+/)
-            .map((term) => term.trim())
-            .filter((term) => term.length >= 3 && !SEARCH_STOP_WORDS.has(term))
-        )
-      );
-
-      if (searchTerms.length > 0) {
-        const { data: categoriesData, error: categoryError } = await supabaseAdmin
-          .from('categories')
-          .select('id, name, slug, parent_id')
-          .eq('status', 'active');
-
-        if (categoryError) {
-          console.error('[Storefront Shop API] Category fallback error:', categoryError);
-        } else if (categoriesData && categoriesData.length > 0) {
-          const scoredMatches = categoriesData
-            .map((category: any) => {
-              const categoryName = String(category.name || '').toLowerCase();
-              const categorySlug = String(category.slug || '').toLowerCase();
-              const haystack = `${categoryName} ${categorySlug}`;
-
-              let score = 0;
-              if (categoryName.includes(normalizedSearch) || categorySlug.includes(normalizedSearch)) score += 6;
-              for (const term of searchTerms) {
-                if (categoryName === term || categorySlug === term) score += 4;
-                else if (haystack.includes(term)) score += 2;
-              }
-
-              return { category, score };
-            })
-            .filter((row) => row.score > 0)
-            .sort((a, b) => b.score - a.score);
-
-          if (scoredMatches.length > 0) {
-            const matchedIds = new Set(scoredMatches.map((row) => row.category.id));
-            for (const category of categoriesData) {
-              if (category.parent_id && matchedIds.has(category.parent_id)) {
-                matchedIds.add(category.id);
-              }
-            }
-
-            const fallbackSlugs = categoriesData
-              .filter((category) => matchedIds.has(category.id))
-              .map((category) => category.slug)
-              .filter(Boolean);
-
-            if (fallbackSlugs.length > 0) {
-              const { data: fallbackData, error: fallbackError, count: fallbackCount } = await runProductQuery({
-                categoryFilterSlugs: fallbackSlugs,
-              });
-
-              if (!fallbackError && (fallbackCount ?? 0) > 0) {
-                return NextResponse.json(
-                  { data: fallbackData || [], count: fallbackCount ?? 0, searchFallback: 'category' },
-                  {
-                    headers: {
-                      'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=60',
-                    },
-                  }
-                );
-              }
-            }
-          }
-        }
-      }
     }
 
     return NextResponse.json(

@@ -64,7 +64,9 @@ function formatProduct(p: any): ShopProduct {
     inStock: effectiveStock > 0,
     maxStock: effectiveStock || 50,
     moq: p.moq || 1,
-    category: p.categories?.name,
+    category:
+      p.product_categories?.find((row: any) => row?.categories?.name)?.categories?.name ||
+      p.categories?.name,
     hasVariants,
     minVariantPrice,
     colorVariants,
