@@ -659,41 +659,71 @@ export async function createChatOrder(
           };
         }
 
-        const uniqueRef = `${orderNumber}-R${Date.now()}`;
-        const payload = {
-          type: 1,
-          amount: total.toString(),
-          email: process.env.MOOLRE_MERCHANT_EMAIL || 'contact@delizbeautytools.com',
-          externalref: uniqueRef,
-          callback: `${baseUrl}/api/payment/moolre/callback`,
-          redirect: `${baseUrl}/order-success?order=${orderNumber}&payment_success=true`,
-          reusable: '0',
-          currency: 'GHS',
-          accountnumber: moolreAccountNumber,
-          metadata: {
-            customer_email: sanitizedShipping.email,
-            original_order_number: orderNumber,
-          },
-        };
+        // Moolre's terminal provisioning fails transiently sometimes; retry a
+        // few times with a fresh reference before falling back.
+        const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+        let paymentUrl: string | null = null;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          const uniqueRef = `${orderNumber}-R${Date.now()}${attempt > 1 ? `-${attempt}` : ''}`;
+          const payload = {
+            type: 1,
+            amount: total.toString(),
+            email: process.env.MOOLRE_MERCHANT_EMAIL || 'contact@delizbeautytools.com',
+            externalref: uniqueRef,
+            callback: `${baseUrl}/api/payment/moolre/callback`,
+            redirect: `${baseUrl}/order-success?order=${orderNumber}&payment_success=true`,
+            reusable: '0',
+            currency: 'GHS',
+            accountnumber: moolreAccountNumber,
+            metadata: {
+              customer_email: sanitizedShipping.email,
+              original_order_number: orderNumber,
+            },
+          };
 
-        const response = await fetch('https://api.moolre.com/embed/link', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-API-USER': moolreApiUser,
-            'X-API-PUBKEY': moolreApiPubkey,
-          },
-          body: JSON.stringify(payload),
-        });
+          let result: any = {};
+          let httpStatus = 0;
+          try {
+            const response = await fetch('https://api.moolre.com/embed/link', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-API-USER': moolreApiUser,
+                'X-API-PUBKEY': moolreApiPubkey,
+              },
+              body: JSON.stringify(payload),
+            });
+            httpStatus = response.status;
+            result = await response.json().catch(() => ({}));
+          } catch (e: any) {
+            httpStatus = 503;
+            result = { message: e?.message || 'Network error' };
+          }
 
-        const result = await response.json();
+          if (result.status === 1 && result.data?.authorization_url) {
+            paymentUrl = result.data.authorization_url;
+            break;
+          }
 
-        if (result.status === 1 && result.data?.authorization_url) {
+          const msg = String(result.message || '').toLowerCase();
+          const transient =
+            httpStatus >= 500 ||
+            msg.includes('terminal') ||
+            msg.includes('sqlstate') ||
+            msg.includes('integrity constraint') ||
+            msg.includes('try again') ||
+            msg.includes('timeout');
+          console.warn(`[ChatTools] Moolre link attempt ${attempt} failed for ${orderNumber}:`, result.message);
+          if (!transient || attempt === 3) break;
+          await sleep(400 * attempt);
+        }
+
+        if (paymentUrl) {
           return {
             success: true,
             orderNumber,
             total,
-            paymentUrl: result.data.authorization_url,
+            paymentUrl,
             message: `Order ${orderNumber} created successfully! Total: GH₵${total.toFixed(2)} (including GH₵${shippingCost.toFixed(2)} delivery). Please complete your payment using the link below.`,
           };
         } else {

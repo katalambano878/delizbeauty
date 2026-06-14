@@ -343,7 +343,11 @@ export default function CheckoutPage() {
 
         } catch (paymentErr: any) {
           console.error('Payment Error:', paymentErr);
-          alert('Failed to initialize payment: ' + paymentErr.message);
+          const friendly =
+            paymentErr?.message && !/sqlstate|integrity constraint|terminal_id/i.test(paymentErr.message)
+              ? paymentErr.message
+              : "We couldn't start your payment right now. Please try again in a moment.";
+          alert(`${friendly}\n\nYour order ${orderNumber} has been saved — you can retry payment anytime, or contact us on WhatsApp for help.`);
           setIsLoading(false);
           return; // Stop execution
         }

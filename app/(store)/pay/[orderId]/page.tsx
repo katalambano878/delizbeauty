@@ -89,7 +89,11 @@ export default function PaymentPage() {
 
     } catch (err: any) {
       console.error('Payment error:', err);
-      setError(err.message || 'Failed to initialize payment. Please try again.');
+      const friendly =
+        err?.message && !/sqlstate|integrity constraint|terminal_id/i.test(err.message)
+          ? err.message
+          : "We couldn't start your payment right now. Please try again in a moment.";
+      setError(friendly);
       setProcessing(false);
     }
   };
