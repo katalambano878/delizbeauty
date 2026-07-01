@@ -71,7 +71,7 @@ export async function POST(req: Request) {
         // 3. ONLY verify with Moolre's API — no more trusting client-side flags
         let moolreApiVerified = false;
 
-        if (!process.env.MOOLRE_API_USER || !process.env.MOOLRE_API_PUBKEY) {
+        if (!process.env.MOOLRE_API_USER || !process.env.MOOLRE_API_PUBKEY || !process.env.MOOLRE_ACCOUNT_NUMBER) {
             console.error('[Verify] Missing Moolre API credentials');
             return NextResponse.json({
                 success: false,
@@ -91,14 +91,20 @@ export async function POST(req: Request) {
             try {
                 console.log('[Verify] Querying Moolre with ref:', ref);
 
-                const checkResponse = await fetch('https://api.moolre.com/embed/status', {
+                // Official transaction-status endpoint. idtype 1 = our externalref.
+                const checkResponse = await fetch('https://api.moolre.com/open/transact/status', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'X-API-USER': process.env.MOOLRE_API_USER,
                         'X-API-PUBKEY': process.env.MOOLRE_API_PUBKEY
                     },
-                    body: JSON.stringify({ externalref: ref })
+                    body: JSON.stringify({
+                        type: 1,
+                        idtype: '1',
+                        id: ref,
+                        accountnumber: process.env.MOOLRE_ACCOUNT_NUMBER
+                    })
                 });
 
                 const checkResult = await checkResponse.json();
@@ -106,9 +112,12 @@ export async function POST(req: Request) {
 
                 const data = checkResult.data || {};
 
-                // Moolre uses txtstatus (int 1) and/or a string status field
+                // Status API returns data.txstatus (1 = success). Also accept the
+                // callback-style field name (txtstatus) defensively.
                 const apiOk = checkResult.status === 1 || checkResult.status === '1';
-                const txOk = data.txtstatus === 1 || data.txtstatus === '1';
+                const txOk =
+                    data.txstatus === 1 || data.txstatus === '1' ||
+                    data.txtstatus === 1 || data.txtstatus === '1';
                 const statusStr = String(data.status || data.txtstatus_description || '').toLowerCase();
                 const messageStr = String(checkResult.message || '').toLowerCase();
                 const statusOk = txOk ||
