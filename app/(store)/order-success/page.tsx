@@ -62,12 +62,15 @@ function OrderSuccessContent() {
       }
     }
 
-    // Callback never fired — call our verify endpoint which queries Moolre directly
+    // Callback never fired — call our verify endpoint which queries the gateway directly.
     try {
-      const res = await fetch('/api/payment/moolre/verify', {
+      const gateway = _initialOrder?.metadata?.payment_gateway || _initialOrder?.metadata?.payment_method || _initialOrder?.payment_method;
+      const isMoolre = gateway === 'moolre';
+      const verifyUrl = isMoolre ? '/api/payment/moolre/verify' : '/api/payment/hubtel/verify';
+      const res = await fetch(verifyUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderNumber: orderNum })
+        body: JSON.stringify({ orderNumber: orderNum, email: _initialOrder?.email })
       });
       const result = await res.json();
       console.log('[Success] Verify result:', result);

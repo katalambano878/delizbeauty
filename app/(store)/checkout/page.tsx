@@ -163,7 +163,7 @@ export default function CheckoutPage() {
   };
 
   const [deliveryMethod, setDeliveryMethod] = useState('pickup');
-  const [paymentMethod, setPaymentMethod] = useState('moolre');
+  const [paymentMethod, setPaymentMethod] = useState('hubtel');
   const [errors, setErrors] = useState<any>({});
 
 
@@ -314,6 +314,52 @@ export default function CheckoutPage() {
       const order = checkoutResult.order;
 
       // 4. Handle Payment Redirects or Completion
+      if (paymentMethod === 'hubtel') {
+        try {
+          const paymentRes = await fetch('/api/payment/hubtel', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              orderId: orderNumber,
+              customerEmail: shippingData.email,
+            })
+          });
+
+          const paymentResult = await paymentRes.json();
+
+          if (!paymentRes.ok || !paymentResult.success) {
+            if (paymentResult.all_out_of_stock) {
+              throw new Error('The items in your order are no longer available. Please start a new order.');
+            }
+            throw new Error(paymentResult.message || 'Payment initialization failed');
+          }
+
+          // Let the customer know if anything was auto-removed before charging.
+          if (Array.isArray(paymentResult.removedItems) && paymentResult.removedItems.length > 0) {
+            alert(
+              `Some items are no longer available and were removed from your order:\n\n${paymentResult.removedItems
+                .map((i: string) => `• ${i}`)
+                .join('\n')}\n\nYou'll only be charged GH₵ ${Number(paymentResult.amount).toFixed(2)}.`
+            );
+          }
+
+          // Clear cart before redirecting to Hubtel's hosted checkout
+          clearCart();
+          window.location.href = paymentResult.url;
+          return;
+
+        } catch (paymentErr: any) {
+          console.error('Payment Error:', paymentErr);
+          const friendly =
+            paymentErr?.message && !/sqlstate|integrity constraint/i.test(paymentErr.message)
+              ? paymentErr.message
+              : "We couldn't start your payment right now. Please try again in a moment.";
+          alert(`${friendly}\n\nYour order ${orderNumber} has been saved — you can retry payment anytime, or contact us on WhatsApp for help.`);
+          setIsLoading(false);
+          return; // Stop execution
+        }
+      }
+
       if (paymentMethod === 'moolre') {
         try {
           // Payment link reminder will be sent automatically after 15 mins if unpaid (via cron)
@@ -716,7 +762,7 @@ export default function CheckoutPage() {
                           Processing...
                         </>
                       ) : (
-                        'Pay with Mobile Money'
+                        'Proceed to Secure Payment'
                       )}
                     </button>
                   </div>

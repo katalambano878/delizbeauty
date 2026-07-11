@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { usePageTitle } from '@/hooks/usePageTitle';
 
@@ -9,7 +9,9 @@ export default function PaymentPage() {
   usePageTitle('Complete Payment');
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const orderId = params.orderId as string;
+  const cancelled = searchParams.get('cancelled') === 'true';
 
   const [order, setOrder] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -69,20 +71,28 @@ export default function PaymentPage() {
         return;
       }
 
-      const paymentRes = await fetch('/api/payment/moolre', {
+      // Server re-reads amount/email from the DB — only orderId is needed.
+      const paymentRes = await fetch('/api/payment/hubtel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           orderId: order.order_number,
-          amount: order.total,
-          customerEmail: order.email
         })
       });
 
       const paymentResult = await paymentRes.json();
 
-      if (!paymentResult.success) {
+      if (!paymentRes.ok || !paymentResult.success) {
+        if (paymentResult.all_out_of_stock) {
+          setOutOfStockItems(paymentResult.removedItems || []);
+          setProcessing(false);
+          return;
+        }
         throw new Error(paymentResult.message || 'Payment initialization failed');
+      }
+
+      if (Array.isArray(paymentResult.removedItems) && paymentResult.removedItems.length > 0) {
+        setOutOfStockItems(paymentResult.removedItems);
       }
 
       window.location.href = paymentResult.url;
@@ -220,6 +230,19 @@ export default function PaymentPage() {
           </div>
         </div>
 
+        {/* Payment cancelled notice */}
+        {cancelled && !hasStockIssue && order?.payment_status !== 'paid' && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6">
+            <div className="flex items-start space-x-3">
+              <i className="ri-information-line text-xl text-amber-600 mt-0.5"></i>
+              <div>
+                <p className="text-sm font-semibold text-amber-800">Payment cancelled</p>
+                <p className="text-sm text-amber-700 mt-1">Your payment was cancelled. You can try again below whenever you're ready.</p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Payment status banners */}
         {!hasStockIssue && order?.payment_status === 'pending' && (
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
@@ -269,7 +292,7 @@ export default function PaymentPage() {
             ) : (
               <>
                 <i className="ri-secure-payment-line mr-2"></i>
-                Pay GH₵ {order?.total?.toFixed(2)} with Mobile Money
+                Pay GH₵ {order?.total?.toFixed(2)} Securely
               </>
             )}
           </button>
@@ -295,7 +318,7 @@ export default function PaymentPage() {
         <div className="mt-6 text-center">
           <p className="text-xs text-gray-500 flex items-center justify-center">
             <i className="ri-lock-line mr-1"></i>
-            Secure payment powered by Moolre
+            Secure payment powered by Hubtel
           </p>
         </div>
 
