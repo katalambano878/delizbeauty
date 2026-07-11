@@ -739,6 +739,49 @@ export default function CheckoutPage() {
                     </label>
                     */}
                   </div>
+                </div>
+
+                <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
+                  <h2 className="text-xl font-bold text-gray-900 mb-6">Payment Method</h2>
+                  <div className="space-y-4">
+                    <label className={`flex items-center justify-between p-4 border-2 rounded-lg cursor-pointer transition-colors ${paymentMethod === 'hubtel' ? 'border-gray-900 bg-gray-100' : 'border-gray-300 hover:border-gray-400'
+                      }`}>
+                      <div className="flex items-center space-x-4">
+                        <input
+                          type="radio"
+                          name="payment"
+                          value="hubtel"
+                          checked={paymentMethod === 'hubtel'}
+                          onChange={(e) => setPaymentMethod(e.target.value)}
+                          className="w-5 h-5 text-gray-900"
+                        />
+                        <div>
+                          <p className="font-semibold text-gray-900">Mobile Money &amp; Card</p>
+                          <p className="text-sm text-gray-600">Pay with MTN, Telecel, AT MoMo or Visa/Mastercard via Hubtel</p>
+                        </div>
+                      </div>
+                      <i className="ri-secure-payment-line text-2xl text-gray-900"></i>
+                    </label>
+
+                    <label className={`flex items-center justify-between p-4 border-2 rounded-lg cursor-pointer transition-colors ${paymentMethod === 'moolre' ? 'border-gray-900 bg-gray-100' : 'border-gray-300 hover:border-gray-400'
+                      }`}>
+                      <div className="flex items-center space-x-4">
+                        <input
+                          type="radio"
+                          name="payment"
+                          value="moolre"
+                          checked={paymentMethod === 'moolre'}
+                          onChange={(e) => setPaymentMethod(e.target.value)}
+                          className="w-5 h-5 text-gray-900"
+                        />
+                        <div>
+                          <p className="font-semibold text-gray-900">Mobile Money</p>
+                          <p className="text-sm text-gray-600">Pay with mobile money via Moolre</p>
+                        </div>
+                      </div>
+                      <i className="ri-smartphone-line text-2xl text-gray-900"></i>
+                    </label>
+                  </div>
 
                   <div className="flex flex-col-reverse md:flex-row gap-4 mt-6">
                     <button
