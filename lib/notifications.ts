@@ -280,11 +280,15 @@ ${emailButton('Track Your Order', trackingUrl)}
 <p style="color:#9ca3af;font-size:12px;text-align:center;margin:0;">Or copy this link: <a href="${trackingUrl}" style="color:${BRAND.color};">${trackingUrl}</a></p>
 `, `Your order #${order_number || id} is confirmed!`);
 
-    await sendEmail({
-        to: email,
-        subject: `Order Confirmed! #${order_number || id}`,
-        html: customerEmailHtml
-    });
+    if (email && /\S+@\S+\.\S+/.test(email)) {
+        await sendEmail({
+            to: email,
+            subject: `Order Confirmed! #${order_number || id}`,
+            html: customerEmailHtml
+        });
+    } else {
+        console.log(`[Notification] Skipping customer email for #${order_number || id} — no valid email`);
+    }
 
     // 2. Email to Admin
     const adminEmailHtml = emailLayout(`

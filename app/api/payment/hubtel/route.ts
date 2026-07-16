@@ -6,6 +6,7 @@ import {
     makeHubtelClientReference,
     hubtelInitiateCheckout,
     normalizeGhPhone,
+    getHubtelPublicBaseUrl,
 } from '@/lib/hubtel';
 
 const isUUID = (str: string) =>
@@ -190,7 +191,9 @@ export async function POST(req: Request) {
         }
 
         // 6. Build client reference + public URLs (Hubtel requires public HTTPS).
-        const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || '').replace(/\/+$/, '');
+        // CRITICAL: use www host — apex delizbeautytools.com 307-redirects to www
+        // and Hubtel's callback POST will not follow that redirect.
+        const baseUrl = getHubtelPublicBaseUrl();
         if (!baseUrl || !baseUrl.startsWith('https://')) {
             console.error('[Hubtel] NEXT_PUBLIC_APP_URL must be a public https URL for callbacks. Got:', baseUrl || '(empty)');
             return NextResponse.json(

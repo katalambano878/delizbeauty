@@ -4,30 +4,21 @@ import { sendOrderConfirmation } from '@/lib/notifications';
 import { checkRateLimit, getClientIdentifier, RATE_LIMITS } from '@/lib/rate-limit';
 import {
     stripHubtelReferenceSuffix,
-    hubtelCheckStatus,
+    hubtelCheckStatusWithRetry,
     isHubtelPaid,
     isHubtelFailure,
+    hubtelAmountMatches,
 } from '@/lib/hubtel';
 
 /**
  * Hubtel checkout callback (webhook).
  *
- * Example payload:
- * {
- *   "ResponseCode": "0000",
- *   "Status": "Success",
- *   "Data": {
- *     "CheckoutId": "...",
- *     "ClientReference": "ORD-123-456-r<ts>",
- *     "Status": "Paid",
- *     "Amount": 120.00,
- *     ...
- *   }
- * }
- *
  * SECURITY: Hubtel does NOT sign callbacks. We NEVER mark an order paid from
  * the callback body alone — we re-query the RMSC status endpoint and require
- * Hubtel's own API to confirm payment AND the settlement amount to match.
+ * Hubtel's own API to confirm payment AND the amount to match.
+ *
+ * IMPORTANT: return HTTP 503 when payment is not yet confirmed so Hubtel
+ * retries (returning 200 stops retries even if we haven't marked paid).
  */
 export async function POST(req: Request) {
     console.log('[Hubtel Callback] POST received at', new Date().toISOString());
@@ -57,7 +48,7 @@ export async function POST(req: Request) {
                     body = Object.fromEntries(new URLSearchParams(rawText).entries());
                 }
             }
-        } catch (parseError) {
+        } catch {
             console.error('[Hubtel Callback] Body parsing failed');
             return NextResponse.json({ success: false, message: 'Invalid Request Body' }, { status: 400 });
         }
@@ -79,7 +70,6 @@ export async function POST(req: Request) {
             return NextResponse.json({ success: false, message: 'Missing client reference' }, { status: 400 });
         }
 
-        // Recover the order number from the reference.
         const orderNumber = stripHubtelReferenceSuffix(clientReference);
 
         const { data: existingOrder, error: fetchError } = await supabaseAdmin
@@ -93,14 +83,16 @@ export async function POST(req: Request) {
             return NextResponse.json({ success: false, message: 'Order not found' }, { status: 404 });
         }
 
-        // Idempotent: already paid.
         if (existingOrder.payment_status === 'paid') {
             console.log('[Hubtel Callback] Order already paid, skipping:', orderNumber);
             return NextResponse.json({ success: true, message: 'Order already processed' });
         }
 
-        // SECURITY: re-verify with Hubtel's own API — never trust the callback body.
-        const statusResult = await hubtelCheckStatus(clientReference);
+        // Re-verify with Hubtel (retry — RMSC can lag the webhook).
+        const statusResult = await hubtelCheckStatusWithRetry(clientReference, {
+            attempts: 3,
+            delayMs: 2000,
+        });
         console.log(
             '[Hubtel Callback] RMSC status for', orderNumber,
             '| found:', statusResult.found,
@@ -112,9 +104,6 @@ export async function POST(req: Request) {
         const verifiedPaid = statusResult.found && isHubtelPaid(statusResult.status);
 
         if (!verifiedPaid) {
-            // Only mark FAILED on a genuine terminal failure — otherwise the
-            // payment may still be in flight and the return-page verify (or a
-            // later callback) can still confirm it. Leave pending in that case.
             const terminalFailure =
                 isHubtelFailure(statusResult.status, statusResult.responseCode) ||
                 isHubtelFailure(callbackStatus, responseCode);
@@ -142,18 +131,23 @@ export async function POST(req: Request) {
                         },
                     })
                     .eq('order_number', orderNumber);
+                return NextResponse.json({ success: false, message: 'Payment failed' });
             }
 
-            return NextResponse.json({ success: false, message: 'Payment not confirmed' });
+            // Not yet confirmed — ask Hubtel to retry (503), not 200.
+            return NextResponse.json(
+                { success: false, message: 'Payment not confirmed by gateway yet' },
+                { status: 503 }
+            );
         }
 
-        // SECURITY: settlement amount must match the order total within 0.01.
-        const settled = statusResult.amountAfterCharges ?? statusResult.amount;
-        const expected = Number(existingOrder.total);
-        if (settled !== null && Math.abs(settled - expected) > 0.01) {
+        // Match customer-paid amount OR settlement (merchant-fee accounts diverge).
+        if (!hubtelAmountMatches(Number(existingOrder.total), statusResult)) {
             console.error(
-                '[Hubtel Callback] AMOUNT MISMATCH — REJECTING! Expected:', expected,
-                'Settled:', settled, 'Order:', orderNumber
+                '[Hubtel Callback] AMOUNT MISMATCH — REJECTING! Expected:', existingOrder.total,
+                'Paid:', statusResult.amount,
+                'AfterFees:', statusResult.amountAfterCharges,
+                'Order:', orderNumber
             );
             return NextResponse.json(
                 { success: false, message: 'Payment amount does not match order total' },
@@ -161,7 +155,6 @@ export async function POST(req: Request) {
             );
         }
 
-        // Mark paid via existing RPC.
         const paymentRef = String(statusResult.transactionId || data.CheckoutId || clientReference);
         const { data: orderJson, error: updateError } = await supabaseAdmin.rpc('mark_order_paid', {
             order_ref: orderNumber,
@@ -179,7 +172,6 @@ export async function POST(req: Request) {
 
         console.log('[Hubtel Callback] Order marked paid:', orderNumber);
 
-        // Update customer stats (best-effort).
         try {
             if (orderJson.email) {
                 await supabaseAdmin.rpc('update_customer_stats', {
@@ -191,7 +183,6 @@ export async function POST(req: Request) {
             console.error('[Hubtel Callback] Customer stats failed:', statsError.message);
         }
 
-        // Fire notifications (best-effort).
         try {
             await sendOrderConfirmation(orderJson);
             console.log('[Hubtel Callback] Notifications sent for:', orderNumber);
@@ -202,10 +193,14 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true, message: 'Payment verified and order updated' });
     } catch (error: any) {
         console.error('[Hubtel Callback] Critical error:', error?.message || error);
-        return NextResponse.json({ success: false, message: 'Internal server error' }, { status: 500 });
+        // 503 so Hubtel retries on unexpected failures
+        return NextResponse.json({ success: false, message: 'Internal server error' }, { status: 503 });
     }
 }
 
 export async function GET() {
-    return NextResponse.json({ message: 'Method not allowed' }, { status: 405 });
+    return NextResponse.json({
+        message: 'Hubtel callback endpoint ready',
+        timestamp: new Date().toISOString(),
+    });
 }

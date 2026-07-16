@@ -75,6 +75,20 @@ export function isHubtelPaid(status?: string | null): boolean {
     return s === 'paid' || s === 'success' || s === 'successful' || s === 'completed';
 }
 
+/**
+ * Public site base URL for Hubtel callback/return URLs.
+ *
+ * Hubtel POSTs to callbackUrl and will NOT reliably follow apex→www redirects
+ * (Vercel 307). Always prefer the www host when the bare domain redirects.
+ */
+export function getHubtelPublicBaseUrl(fallback?: string): string {
+    let base = (process.env.NEXT_PUBLIC_APP_URL || fallback || '').replace(/\/+$/, '');
+    if (base === 'https://delizbeautytools.com') {
+        base = 'https://www.delizbeautytools.com';
+    }
+    return base;
+}
+
 /** True for terminal failure states or known failure response codes. */
 export function isHubtelFailure(status?: string | null, responseCode?: string | null): boolean {
     const s = String(status || '').trim().toLowerCase();
@@ -195,6 +209,27 @@ export interface HubtelStatusResult {
 }
 
 /**
+ * Amount match for Hubtel settlements.
+ *
+ * Prefer TransactionAmount (what the customer paid) — on merchant-borne fee
+ * accounts AmountAfterFees is lower than order.total and would false-reject.
+ * Accept either field within ±0.01; if neither is present, don't block.
+ */
+export function hubtelAmountMatches(
+    expectedTotal: number,
+    status: Pick<HubtelStatusResult, 'amount' | 'amountAfterCharges'>
+): boolean {
+    const expected = Number(expectedTotal);
+    if (!Number.isFinite(expected)) return false;
+    const customerPaid = status.amount;
+    const afterFees = status.amountAfterCharges;
+    if (customerPaid !== null && Math.abs(customerPaid - expected) <= 0.01) return true;
+    if (afterFees !== null && Math.abs(afterFees - expected) <= 0.01) return true;
+    if (customerPaid === null && afterFees === null) return true;
+    return false;
+}
+
+/**
  * Query the public RMSC transaction-status endpoint. No IP whitelisting
  * required. The endpoint returns PascalCase fields (and `Data` may be an
  * array) — we normalize into a consistent camelCase shape here.
@@ -242,13 +277,12 @@ export async function hubtelCheckStatus(clientReference: string): Promise<Hubtel
             return Number.isFinite(n) ? n : null;
         };
 
-        const status = String(
-            d.TransactionStatus ??
-            d.InvoiceStatus ??
-            d.Status ??
-            d.status ??
-            ''
-        ).trim();
+        // Prefer Status/status first (RMSC returns Status: "Success"/"Paid").
+        // Skip empty strings — ?? alone would keep "".
+        const status =
+            [d.Status, d.status, d.TransactionStatus, d.InvoiceStatus]
+                .map((v) => String(v ?? '').trim())
+                .find(Boolean) || '';
 
         return {
             found: true,
@@ -266,4 +300,33 @@ export async function hubtelCheckStatus(clientReference: string): Promise<Hubtel
     } catch (err: any) {
         return { ...empty, raw: { error: err?.message || 'Network error' } };
     }
+}
+
+/** RMSC can lag behind the callback webhook — retry before giving up. */
+export async function hubtelCheckStatusWithRetry(
+    clientReference: string,
+    options: { attempts?: number; delayMs?: number } = {}
+): Promise<HubtelStatusResult> {
+    const attempts = options.attempts ?? 3;
+    const delayMs = options.delayMs ?? 2000;
+    let last: HubtelStatusResult | null = null;
+
+    for (let i = 0; i < attempts; i++) {
+        last = await hubtelCheckStatus(clientReference);
+        if (last.found && isHubtelPaid(last.status)) return last;
+        if (i < attempts - 1) {
+            await new Promise((resolve) => setTimeout(resolve, delayMs));
+        }
+    }
+
+    return last || {
+        found: false,
+        status: '',
+        amount: null,
+        charges: null,
+        amountAfterCharges: null,
+        responseCode: null,
+        clientReference: null,
+        transactionId: null,
+    };
 }

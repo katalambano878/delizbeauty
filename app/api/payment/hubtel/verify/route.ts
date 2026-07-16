@@ -2,28 +2,30 @@ import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { sendOrderConfirmation } from '@/lib/notifications';
 import { checkRateLimit, getClientIdentifier, RATE_LIMITS } from '@/lib/rate-limit';
-import { hubtelCheckStatus, isHubtelPaid } from '@/lib/hubtel';
+import {
+    hubtelCheckStatusWithRetry,
+    isHubtelPaid,
+    hubtelAmountMatches,
+    getHubtelPublicBaseUrl,
+} from '@/lib/hubtel';
 
 /**
  * Return-page verification for Hubtel hosted checkout.
  *
- * Called from /order-success after the customer returns from the checkout page.
- * Works locally (unlike the callback, which needs a public URL).
- *
- * SECURITY: we ONLY trust Hubtel's RMSC status endpoint for payment proof.
- * Everything here is idempotent — both this route and the callback may fire.
+ * Called from /order-success after the customer returns from checkout.
+ * Idempotent with the callback — both re-verify via RMSC.
  */
 export async function POST(req: Request) {
     try {
-        // 1. Rate limit + same-origin enforcement.
         const clientId = getClientIdentifier(req);
         const rateLimitResult = checkRateLimit(`verify:${clientId}`, RATE_LIMITS.payment);
         if (!rateLimitResult.success) {
             return NextResponse.json({ success: false, message: 'Too many requests' }, { status: 429 });
         }
 
+        // Soft same-origin: only reject when Origin is present AND clearly foreign.
         const origin = req.headers.get('origin') || '';
-        const appUrl = (process.env.NEXT_PUBLIC_APP_URL || '').replace(/\/+$/, '');
+        const appUrl = getHubtelPublicBaseUrl();
         const host = req.headers.get('host') || '';
         if (origin) {
             let originHost = '';
@@ -32,20 +34,24 @@ export async function POST(req: Request) {
             } catch {
                 originHost = '';
             }
-            const appHost = appUrl ? new URL(appUrl).host : '';
-            const sameOrigin = originHost && (originHost === host || (appHost && originHost === appHost));
-            if (!sameOrigin) {
+            let appHost = '';
+            try {
+                appHost = appUrl ? new URL(appUrl).host : '';
+            } catch {
+                appHost = '';
+            }
+            const allowed = new Set(
+                [host, appHost, 'delizbeautytools.com', 'www.delizbeautytools.com'].filter(Boolean)
+            );
+            if (originHost && !allowed.has(originHost)) {
                 console.warn('[Hubtel Verify] Cross-origin request rejected:', origin);
                 return NextResponse.json({ success: false, message: 'Forbidden' }, { status: 403 });
             }
         }
 
-        const { orderNumber, email } = await req.json().catch(() => ({}));
+        const body = await req.json().catch(() => ({}));
+        const { orderNumber, email, externalRef } = body || {};
 
-        // 2. Validate email + order number format.
-        if (!email || typeof email !== 'string' || !/\S+@\S+\.\S+/.test(email)) {
-            return NextResponse.json({ success: false, message: 'A valid email is required' }, { status: 400 });
-        }
         if (!orderNumber || typeof orderNumber !== 'string' || !/^ORD-\d+-\d+$/.test(orderNumber)) {
             return NextResponse.json({ success: false, message: 'Invalid order number format' }, { status: 400 });
         }
@@ -58,16 +64,22 @@ export async function POST(req: Request) {
             .eq('order_number', orderNumber)
             .single();
 
-        // 3. IDOR guard: 404 on missing order OR email mismatch (don't reveal existence).
         if (fetchError || !order) {
             return NextResponse.json({ success: false, message: 'Order not found' }, { status: 404 });
         }
-        if (String(order.email || '').trim().toLowerCase() !== email.trim().toLowerCase()) {
+
+        // IDOR guard only when an email was supplied AND the order has one.
+        // Guest checkouts sometimes have empty email — don't block those.
+        if (
+            email &&
+            typeof email === 'string' &&
+            order.email &&
+            String(order.email).trim().toLowerCase() !== email.trim().toLowerCase()
+        ) {
             console.warn('[Hubtel Verify] Email mismatch for order:', orderNumber);
             return NextResponse.json({ success: false, message: 'Order not found' }, { status: 404 });
         }
 
-        // 4. Already paid → idempotent success.
         if (order.payment_status === 'paid') {
             return NextResponse.json({
                 success: true,
@@ -77,7 +89,10 @@ export async function POST(req: Request) {
             });
         }
 
-        const clientReference = order.metadata?.hubtel_client_reference;
+        const clientReference =
+            (typeof externalRef === 'string' && externalRef) ||
+            order.metadata?.hubtel_client_reference;
+
         if (!clientReference) {
             return NextResponse.json({
                 success: false,
@@ -87,8 +102,10 @@ export async function POST(req: Request) {
             }, { status: 400 });
         }
 
-        // 5. Re-query Hubtel status.
-        const statusResult = await hubtelCheckStatus(clientReference);
+        const statusResult = await hubtelCheckStatusWithRetry(clientReference, {
+            attempts: 3,
+            delayMs: 1500,
+        });
         console.log(
             '[Hubtel Verify] RMSC status for', orderNumber,
             '| found:', statusResult.found,
@@ -107,11 +124,12 @@ export async function POST(req: Request) {
             });
         }
 
-        // Settlement amount must match order total within 0.01.
-        const settled = statusResult.amountAfterCharges ?? statusResult.amount;
-        const expected = Number(order.total);
-        if (settled !== null && Math.abs(settled - expected) > 0.01) {
-            console.error('[Hubtel Verify] AMOUNT MISMATCH! Expected:', expected, 'Settled:', settled);
+        if (!hubtelAmountMatches(Number(order.total), statusResult)) {
+            console.error(
+                '[Hubtel Verify] AMOUNT MISMATCH! Expected:', order.total,
+                'Paid:', statusResult.amount,
+                'AfterFees:', statusResult.amountAfterCharges
+            );
             return NextResponse.json({
                 success: false,
                 status: order.status,
@@ -120,7 +138,6 @@ export async function POST(req: Request) {
             }, { status: 400 });
         }
 
-        // Mark paid via RPC (idempotent with the callback).
         const paymentRef = String(statusResult.transactionId || clientReference);
         const { data: orderJson, error: updateError } = await supabaseAdmin.rpc('mark_order_paid', {
             order_ref: orderNumber,

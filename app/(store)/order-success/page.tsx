@@ -70,7 +70,11 @@ function OrderSuccessContent() {
       const res = await fetch(verifyUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderNumber: orderNum, email: _initialOrder?.email })
+        body: JSON.stringify({
+          orderNumber: orderNum,
+          email: _initialOrder?.email,
+          externalRef: _initialOrder?.metadata?.hubtel_client_reference || undefined,
+        })
       });
       const result = await res.json();
       console.log('[Success] Verify result:', result);
