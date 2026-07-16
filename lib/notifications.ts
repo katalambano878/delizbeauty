@@ -201,6 +201,17 @@ export async function sendSMS({ to, message }: { to: string; message: string }) 
 }
 
 export async function sendOrderConfirmation(order: any) {
+    // Guard: never SMS/email admins with "#null / GH₵0.00" if the caller
+    // passed a null/partial order (e.g. RPC returned nothing).
+    if (!order || typeof order !== 'object' || (!order.order_number && !order.id)) {
+        console.error('[Notification] sendOrderConfirmation called with invalid order — aborting');
+        return;
+    }
+    if (order.order_number == null && order.id == null) {
+        console.error('[Notification] sendOrderConfirmation missing order identifiers — aborting');
+        return;
+    }
+
     const { id, email, phone: orderPhone, shipping_address, total, created_at, order_number, metadata } = order;
 
     const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null) || 'https://delizbeautytools.com').replace(/\/+$/, '');

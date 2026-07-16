@@ -165,7 +165,18 @@ export async function POST(req: Request) {
             console.error('[Hubtel Callback] RPC error:', updateError.message);
             return NextResponse.json({ success: false, message: 'Database update failed' }, { status: 500 });
         }
-        if (!orderJson) {
+        // Prefer RPC payload; fall back to the order we already loaded so we
+        // never SMS admins with "#null / GH₵0.00".
+        const notifyPayload =
+            orderJson && (orderJson.order_number || orderJson.id)
+                ? orderJson
+                : {
+                    ...existingOrder,
+                    payment_status: 'paid',
+                    status: 'processing',
+                };
+
+        if (!notifyPayload?.order_number && !notifyPayload?.id) {
             console.error('[Hubtel Callback] Order not found after RPC:', orderNumber);
             return NextResponse.json({ success: false, message: 'Order not found' }, { status: 404 });
         }
@@ -173,10 +184,10 @@ export async function POST(req: Request) {
         console.log('[Hubtel Callback] Order marked paid:', orderNumber);
 
         try {
-            if (orderJson.email) {
+            if (notifyPayload.email) {
                 await supabaseAdmin.rpc('update_customer_stats', {
-                    p_customer_email: orderJson.email,
-                    p_order_total: orderJson.total,
+                    p_customer_email: notifyPayload.email,
+                    p_order_total: notifyPayload.total,
                 });
             }
         } catch (statsError: any) {
@@ -184,7 +195,7 @@ export async function POST(req: Request) {
         }
 
         try {
-            await sendOrderConfirmation(orderJson);
+            await sendOrderConfirmation(notifyPayload);
             console.log('[Hubtel Callback] Notifications sent for:', orderNumber);
         } catch (notifyError: any) {
             console.error('[Hubtel Callback] Notification failed:', notifyError.message);

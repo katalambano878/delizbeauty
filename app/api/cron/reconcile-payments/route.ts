@@ -121,18 +121,26 @@ export async function GET(request: Request) {
             confirmedOrders.push(order.order_number);
             console.log(`[Reconciler] Confirmed Hubtel payment for ${order.order_number}`);
 
-            if (orderJson) {
-                try {
-                    if (orderJson.email) {
-                        await supabase.rpc('update_customer_stats', {
-                            p_customer_email: orderJson.email,
-                            p_order_total: orderJson.total,
-                        });
-                    }
-                    await sendOrderConfirmation(orderJson);
-                } catch (notifyErr: any) {
-                    console.error(`[Reconciler] Post-payment steps failed for ${order.order_number}:`, notifyErr?.message);
+            // Prefer the full order row we already have if RPC returns a thin/null payload.
+            const notifyPayload =
+                orderJson && (orderJson.order_number || orderJson.id)
+                    ? orderJson
+                    : {
+                        ...order,
+                        payment_status: 'paid',
+                        status: 'processing',
+                    };
+
+            try {
+                if (notifyPayload.email) {
+                    await supabase.rpc('update_customer_stats', {
+                        p_customer_email: notifyPayload.email,
+                        p_order_total: notifyPayload.total,
+                    });
                 }
+                await sendOrderConfirmation(notifyPayload);
+            } catch (notifyErr: any) {
+                console.error(`[Reconciler] Post-payment steps failed for ${order.order_number}:`, notifyErr?.message);
             }
         } catch (e: any) {
             console.warn(`[Reconciler] Status check failed for ${order.order_number}:`, e?.message);

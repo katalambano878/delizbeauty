@@ -151,24 +151,31 @@ export async function POST(req: Request) {
 
         console.log('[Hubtel Verify] Order marked paid:', orderNumber);
 
-        if (orderJson?.email) {
+        const notifyPayload =
+            orderJson && (orderJson.order_number || orderJson.id)
+                ? orderJson
+                : {
+                    ...order,
+                    payment_status: 'paid',
+                    status: 'processing',
+                };
+
+        if (notifyPayload?.email) {
             try {
                 await supabaseAdmin.rpc('update_customer_stats', {
-                    p_customer_email: orderJson.email,
-                    p_order_total: orderJson.total,
+                    p_customer_email: notifyPayload.email,
+                    p_order_total: notifyPayload.total,
                 });
             } catch (statsError: any) {
                 console.error('[Hubtel Verify] Customer stats failed:', statsError.message);
             }
         }
 
-        if (orderJson) {
-            try {
-                await sendOrderConfirmation(orderJson);
-                console.log('[Hubtel Verify] Notifications sent for:', orderNumber);
-            } catch (notifyError: any) {
-                console.error('[Hubtel Verify] Notification failed:', notifyError.message);
-            }
+        try {
+            await sendOrderConfirmation(notifyPayload);
+            console.log('[Hubtel Verify] Notifications sent for:', orderNumber);
+        } catch (notifyError: any) {
+            console.error('[Hubtel Verify] Notification failed:', notifyError.message);
         }
 
         return NextResponse.json({
