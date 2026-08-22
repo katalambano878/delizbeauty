@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import {
+  productBelongsToCategoryIds,
+  resolveCategoryIdsFromSlugs,
+} from '@/lib/product-categories';
 
 // Simple in-memory cache
 let cache: { data: any; timestamp: number } | null = null;
@@ -24,17 +28,16 @@ export async function GET(request: Request) {
     }
 
     try {
-        const hasCategoryFilter = Boolean(category);
-        const categoryJoin = hasCategoryFilter
-            ? 'product_categories!inner(category_id, categories!inner(id, name, slug))'
-            : 'product_categories(category_id, categories(id, name, slug))';
+        const categoryFilterIds = category
+            ? await resolveCategoryIdsFromSlugs([category])
+            : [];
 
         let query = supabaseAdmin
             .from('products')
             .select(`
                 id, name, slug, price, compare_at_price, quantity, description, metadata,
                 categories(id, name, slug),
-                ${categoryJoin},
+                product_categories(category_id, categories(id, name, slug)),
                 product_images(url, position),
                 product_variants(id, name, price, quantity)
             `)
@@ -45,8 +48,25 @@ export async function GET(request: Request) {
             query = query.eq('featured', true);
         }
 
-        if (hasCategoryFilter) {
-            query = query.eq('product_categories.categories.slug', category);
+        if (category) {
+            if (categoryFilterIds.length === 0) {
+                return NextResponse.json([]);
+            }
+            query = supabaseAdmin
+                .from('products')
+                .select(`
+                    id, name, slug, price, compare_at_price, quantity, description, metadata,
+                    categories(id, name, slug),
+                    product_categories!inner(category_id, categories!inner(id, name, slug)),
+                    product_images(url, position),
+                    product_variants(id, name, price, quantity)
+                `)
+                .order('created_at', { ascending: false })
+                .eq('status', 'active')
+                .in('product_categories.category_id', categoryFilterIds);
+            if (featured) {
+                query = query.eq('featured', true);
+            }
         }
 
         query = query.limit(limit);
@@ -58,11 +78,15 @@ export async function GET(request: Request) {
             return NextResponse.json({ error: 'Failed to fetch products' }, { status: 500 });
         }
 
+        const safeData = categoryFilterIds.length > 0
+            ? (data || []).filter((product) => productBelongsToCategoryIds(product, categoryFilterIds))
+            : (data || []);
+
         if (!cache) cache = { data: {}, timestamp: Date.now() };
-        cache.data[cacheKey] = data;
+        cache.data[cacheKey] = safeData;
         cache.timestamp = Date.now();
 
-        return NextResponse.json(data, {
+        return NextResponse.json(safeData, {
             headers: { 'Cache-Control': 'public, s-maxage=900, stale-while-revalidate=1800', 'X-Cache': 'MISS' }
         });
     } catch (err: any) {

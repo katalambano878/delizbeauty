@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import {
+  productBelongsToCategoryIds,
+  resolveCategoryIdsFromSlugs,
+} from '@/lib/product-categories';
+import {
   buildProductTextOrFilter,
   expandSearchTerms,
   fuzzyRankResults,
@@ -113,7 +117,7 @@ async function fuzzyFallbackProducts(tokens: string[]) {
 
 async function runSmartSearch(params: {
   search: string;
-  categoryFilterSlugs: string[];
+  categoryFilterIds: string[];
   priceMin: number;
   priceMax: number;
   rating: number;
@@ -121,7 +125,7 @@ async function runSmartSearch(params: {
   page: number;
   limit: number;
 }) {
-  const { search, categoryFilterSlugs, priceMin, priceMax, rating, sortBy, page, limit } = params;
+  const { search, categoryFilterIds, priceMin, priceMax, rating, sortBy, page, limit } = params;
   const tokens = tokenizeSearchQuery(search);
   const fallbackToken = search.trim().length >= 2 ? search.trim().toLowerCase() : '';
   const effectiveTokens = tokens.length > 0 ? tokens : fallbackToken ? [fallbackToken] : [];
@@ -186,15 +190,8 @@ async function runSmartSearch(params: {
     usedFuzzy = ranked.length > 0;
   }
 
-  if (categoryFilterSlugs.length > 0) {
-    ranked = ranked.filter((product) => {
-      const slugs = new Set<string>();
-      if (product.categories?.slug) slugs.add(product.categories.slug);
-      for (const row of product.product_categories || []) {
-        if (row?.categories?.slug) slugs.add(row.categories.slug);
-      }
-      return categoryFilterSlugs.some((slug) => slugs.has(slug));
-    });
+  if (categoryFilterIds.length > 0) {
+    ranked = ranked.filter((product) => productBelongsToCategoryIds(product, categoryFilterIds));
   }
 
   ranked = applyPriceAndRating(ranked, priceMin, priceMax, rating);
@@ -239,10 +236,13 @@ export async function GET(request: Request) {
       : [];
 
   try {
+    const categoryFilterIds = await resolveCategoryIdsFromSlugs(directCategorySlugs);
+    const hasCategoryFilter = categoryFilterIds.length > 0;
+
     if (search.trim()) {
       const smartResult = await runSmartSearch({
         search,
-        categoryFilterSlugs: directCategorySlugs,
+        categoryFilterIds,
         priceMin,
         priceMax,
         rating,
@@ -258,18 +258,18 @@ export async function GET(request: Request) {
       });
     }
 
-    const hasCategoryFilter = directCategorySlugs.length > 0;
-    const categoryJoin = hasCategoryFilter
-      ? 'product_categories!inner(category_id, categories!inner(id, name, slug, parent_id))'
-      : 'product_categories(category_id, categories(id, name, slug, parent_id))';
-
     let query = supabaseAdmin
       .from('products')
-      .select(PRODUCT_SELECT, { count: 'exact' })
+      .select(hasCategoryFilter ? PRODUCT_SELECT_CATEGORY_INNER : PRODUCT_SELECT, { count: 'exact' })
       .eq('status', 'active');
 
-    if (hasCategoryFilter) {
-      query = query.in('product_categories.categories.slug', directCategorySlugs);
+    if (directCategorySlugs.length > 0) {
+      if (!hasCategoryFilter) {
+        return NextResponse.json({ data: [], count: 0 }, {
+          headers: { 'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=60' },
+        });
+      }
+      query = query.in('product_categories.category_id', categoryFilterIds);
     }
 
     if (priceMax < 5000) {
@@ -308,8 +308,12 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
+    const safeData = hasCategoryFilter
+      ? (data || []).filter((product) => productBelongsToCategoryIds(product, categoryFilterIds))
+      : (data || []);
+
     return NextResponse.json(
-      { data: data || [], count: count ?? 0 },
+      { data: safeData, count: count ?? 0 },
       {
         headers: {
           'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=60',
