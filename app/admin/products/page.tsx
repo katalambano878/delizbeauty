@@ -30,6 +30,7 @@ export default function ProductsPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [categories, setCategories] = useState<any[]>([]);
 
   // Statistics
@@ -60,6 +61,7 @@ export default function ProductsPage() {
   const fetchProducts = async () => {
     try {
       setLoading(true);
+      setLoadError(null);
       const sortParam = sortBy ? `?sortBy=${encodeURIComponent(sortBy)}` : '';
       const res = await fetch(`/api/admin/products${sortParam}`, { credentials: 'include' });
       if (!res.ok) {
@@ -79,8 +81,10 @@ export default function ProductsPage() {
           active: list.filter((p: any) => p.status === 'active').length
         });
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching products:', error);
+      setLoadError(error?.message || 'Failed to load products. The catalog is still there — try again in a moment.');
+      setProducts([]);
     } finally {
       setLoading(false);
     }
@@ -301,6 +305,19 @@ export default function ProductsPage() {
           <div className="p-12 text-center text-gray-500">
             <i className="ri-loader-4-line animate-spin text-3xl mb-2 inline-block"></i>
             <p>Loading products...</p>
+          </div>
+        ) : loadError ? (
+          <div className="p-12 text-center text-gray-500">
+            <i className="ri-error-warning-line text-4xl mb-4 text-amber-500 inline-block"></i>
+            <p className="text-lg text-gray-900">Could not load products</p>
+            <p className="text-sm text-gray-500 mt-1 max-w-md mx-auto">{loadError}</p>
+            <button
+              type="button"
+              onClick={fetchProducts}
+              className="mt-4 px-5 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium"
+            >
+              Try again
+            </button>
           </div>
         ) : filteredProducts.length === 0 ? (
           <div className="p-12 text-center text-gray-500">

@@ -87,11 +87,10 @@ export async function GET(request: Request) {
     let query = supabaseAdmin
       .from('products')
       .select(`
-        *,
+        id, name, slug, sku, price, quantity, status, created_at, metadata, rating_avg, category_id,
         categories(name),
         product_categories(category_id, is_primary, categories(name)),
-        product_variants(count),
-        product_images(url, position)
+        product_variants(count)
       `);
 
     if (sortBy === 'newest') query = query.order('created_at', { ascending: false });
@@ -104,18 +103,23 @@ export async function GET(request: Request) {
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-    const products = (data || []).map((p: any) => {
-      const images = Array.isArray(p.product_images) ? [...p.product_images] : [];
-      images.sort((a: any, b: any) => (Number(a.position) ?? 0) - (Number(b.position) ?? 0));
-      const firstImageUrl = images.find((img: any) => Number(img.position) === 0)?.url
-        || images[0]?.url
-        || PLACEHOLDER_IMAGE;
+    const thumbByProduct = new Map<string, string>();
+    const { data: images } = await supabaseAdmin
+      .from('product_images')
+      .select('product_id, url, position')
+      .order('position', { ascending: true });
+    for (const img of images || []) {
+      if (!img?.product_id || !img?.url || thumbByProduct.has(img.product_id)) continue;
+      thumbByProduct.set(img.product_id, img.url);
+    }
 
+    const products = (data || []).map((p: any) => {
+      const firstImageUrl = thumbByProduct.get(p.id) || PLACEHOLDER_IMAGE;
       return {
         ...p,
         category: formatProductCategoryNames(p),
         image: firstImageUrl,
-        product_images: images,
+        product_images: firstImageUrl === PLACEHOLDER_IMAGE ? [] : [{ url: firstImageUrl, position: 0 }],
         variantsCount: p.product_variants?.[0]?.count || 0,
         stock: p.quantity,
         sales: 0,

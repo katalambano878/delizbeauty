@@ -35,7 +35,7 @@ export async function GET(request: Request) {
         let query = supabaseAdmin
             .from('products')
             .select(`
-                id, name, slug, price, compare_at_price, quantity, description, metadata,
+                id, name, slug, price, compare_at_price, quantity,
                 categories(id, name, slug),
                 product_categories(category_id, categories(id, name, slug)),
                 product_images(url, position),
@@ -55,7 +55,7 @@ export async function GET(request: Request) {
             query = supabaseAdmin
                 .from('products')
                 .select(`
-                    id, name, slug, price, compare_at_price, quantity, description, metadata,
+                    id, name, slug, price, compare_at_price, quantity,
                     categories(id, name, slug),
                     product_categories!inner(category_id, categories!inner(id, name, slug)),
                     product_images(url, position),

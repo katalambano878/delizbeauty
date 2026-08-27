@@ -14,7 +14,8 @@ import {
 } from '@/lib/product-search';
 
 const PRODUCT_SELECT = `
-  *,
+  id, name, slug, price, compare_at_price, quantity, moq, rating_avg, created_at, featured, status, category_id,
+  description, short_description, sku, brand, tags,
   categories(id, name, slug, parent_id),
   product_categories(category_id, categories(id, name, slug, parent_id)),
   product_images(url, position),
@@ -22,7 +23,8 @@ const PRODUCT_SELECT = `
 `;
 
 const PRODUCT_SELECT_CATEGORY_INNER = `
-  *,
+  id, name, slug, price, compare_at_price, quantity, moq, rating_avg, created_at, featured, status, category_id,
+  description, short_description, sku, brand, tags,
   categories(id, name, slug, parent_id),
   product_categories!inner(category_id, categories!inner(id, name, slug, parent_id)),
   product_images(url, position),
@@ -112,7 +114,7 @@ async function fuzzyFallbackProducts(tokens: string[]) {
     return [];
   }
 
-  return fuzzyRankResults(data || [], usableTokens);
+  return fuzzyRankResults((data || []) as any[], usableTokens);
 }
 
 async function runSmartSearch(params: {
