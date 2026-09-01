@@ -8,6 +8,7 @@ import {
     normalizeGhPhone,
     getHubtelPublicBaseUrl,
 } from '@/lib/hubtel';
+import { matchProductVariant } from '@/lib/order-item-display';
 
 const isUUID = (str: string) =>
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
@@ -54,7 +55,7 @@ export async function POST(req: Request) {
 
         // 3. Look up the order (parameterized — never string-interpolated filters)
         const ORDER_SELECT =
-            'id, order_number, subtotal, tax_total, shipping_total, discount_total, total, email, phone, payment_status, shipping_address, metadata, order_items(id, product_id, product_name, variant_name, quantity, unit_price, total_price, metadata)';
+            'id, order_number, subtotal, tax_total, shipping_total, discount_total, total, email, phone, payment_status, shipping_address, metadata, order_items(id, product_id, variant_id, product_name, variant_name, quantity, unit_price, total_price, metadata)';
 
         const { data: order, error: orderError } = isUUID(orderId)
             ? await supabaseAdmin.from('orders').select(ORDER_SELECT).eq('id', orderId).single()
@@ -80,7 +81,7 @@ export async function POST(req: Request) {
         const { data: products } = productIds.length > 0
             ? await supabaseAdmin
                 .from('products')
-                .select('id, name, price, status, quantity, track_quantity, continue_selling, product_variants(id, name, price, quantity)')
+                .select('id, name, price, status, quantity, track_quantity, continue_selling, product_variants(id, name, option1, option2, price, quantity)')
                 .in('id', productIds as string[])
             : { data: [] as any[] };
 
@@ -102,10 +103,11 @@ export async function POST(req: Request) {
             }
 
             // Resolve authoritative unit price (variant price beats base price).
-            let variant: any = null;
-            if (item.variant_name && Array.isArray(product.product_variants)) {
-                variant = product.product_variants.find((v: any) => v.name === item.variant_name) || null;
-            }
+            const variant = matchProductVariant(
+                product.product_variants,
+                item.variant_name,
+                item.variant_id || item.metadata?.variant_id
+            );
             const authoritativePrice = Number(variant ? variant.price : product.price);
             if (!Number.isFinite(authoritativePrice) || authoritativePrice <= 0) {
                 // Unpriced product — cannot be sold.

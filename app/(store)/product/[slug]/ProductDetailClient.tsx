@@ -239,6 +239,8 @@ export default function ProductDetailClient({ slug }: { slug: string }) {
       image: selectedVariant?.image_url || product.images[0],
       quantity: quantity,
       variant: variantLabel,
+      variantId: selectedVariant?.id,
+      sku: selectedVariant?.sku || product.sku || undefined,
       slug: product.slug,
       maxStock: activeStock,
       moq: product.moq || 1,

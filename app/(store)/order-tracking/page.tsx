@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { resolveOrderItemImage } from '@/lib/order-item-display';
 
 function OrderTrackingContent() {
   const searchParams = useSearchParams();
@@ -374,13 +375,15 @@ function OrderTrackingContent() {
         <div className="bg-white rounded-xl shadow-sm p-8">
           <h2 className="text-xl font-bold text-gray-900 mb-6">Order Items</h2>
           <div className="space-y-4">
-            {order.order_items?.map((item: any) => (
+            {order.order_items?.map((item: any) => {
+              const imageUrl = resolveOrderItemImage(item);
+              return (
               <div key={item.id} className="flex items-center space-x-4 p-4 bg-gray-50 rounded-lg">
                 <div className="w-20 h-20 bg-gray-200 rounded-lg overflow-hidden flex-shrink-0 border border-gray-200">
-                  {item.products?.product_images?.[0]?.url || item.metadata?.image ? (
+                  {imageUrl ? (
                     <img
-                      src={item.products?.product_images?.[0]?.url || item.metadata?.image}
-                      alt={item.product_name}
+                      src={imageUrl}
+                      alt={item.variant_name ? `${item.product_name} — ${item.variant_name}` : item.product_name}
                       className="w-full h-full object-cover"
                     />
                   ) : (
@@ -398,7 +401,8 @@ function OrderTrackingContent() {
                 </div>
                 <p className="font-bold text-gray-900">GH₵ {Number(item.unit_price).toFixed(2)}</p>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 

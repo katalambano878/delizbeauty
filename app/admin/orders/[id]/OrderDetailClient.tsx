@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import FraudDetectionAlert from '@/components/FraudDetectionAlert';
 import { supabase } from '@/lib/supabase';
+import { resolveOrderItemImage, resolveOrderItemSku } from '@/lib/order-item-display';
 
 interface OrderDetailClientProps {
   orderId: string;
@@ -48,6 +49,14 @@ export default function OrderDetailClient({ orderId }: OrderDetailClientProps) {
     fetchOrderDetails();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- run when orderId changes
   }, [orderId]);
+
+  useEffect(() => {
+    if (!order || typeof window === 'undefined') return;
+    const shouldPrint = new URLSearchParams(window.location.search).get('print') === 'true';
+    if (!shouldPrint) return;
+    const timer = window.setTimeout(() => window.print(), 800);
+    return () => window.clearTimeout(timer);
+  }, [order]);
 
   const fetchOrderDetails = async () => {
     try {
@@ -322,13 +331,13 @@ export default function OrderDetailClient({ orderId }: OrderDetailClientProps) {
               </thead>
               <tbody>
                 {order?.order_items?.map((item: any) => {
-                  const imageUrl = item.products?.product_images?.[0]?.url;
+                  const imageUrl = resolveOrderItemImage(item);
                   return (
                     <tr key={item.id} className="border-b border-gray-200">
                       <td className="py-2 px-2">
                         {imageUrl ? (
                           // eslint-disable-next-line @next/next/no-img-element
-                          <img src={imageUrl} alt={item.product_name} className="w-14 h-14 object-cover rounded border border-gray-200" />
+                          <img src={imageUrl} alt={item.variant_name ? `${item.product_name} — ${item.variant_name}` : item.product_name} className="w-14 h-14 object-cover rounded border border-gray-200" />
                         ) : (
                           <div className="w-14 h-14 bg-gray-100 rounded border border-gray-200 flex items-center justify-center text-gray-400 text-xs">No img</div>
                         )}
@@ -404,13 +413,16 @@ export default function OrderDetailClient({ orderId }: OrderDetailClientProps) {
               </div>
 
               <div className="space-y-4">
-                {order.order_items?.map((item: any) => (
+                {order.order_items?.map((item: any) => {
+                  const imageUrl = resolveOrderItemImage(item);
+                  const sku = resolveOrderItemSku(item);
+                  return (
                   <div key={item.id} className="flex items-start space-x-4 p-4 bg-gray-50 rounded-lg">
                     <div className="w-20 h-20 bg-white rounded-lg overflow-hidden border border-gray-200 flex items-center justify-center relative">
-                      {(item.metadata?.image || item.products?.product_images?.[0]?.url) ? (
+                      {imageUrl ? (
                         <img
-                          src={item.metadata?.image || item.products?.product_images[0].url}
-                          alt={item.product_name}
+                          src={imageUrl}
+                          alt={item.variant_name ? `${item.product_name} — ${item.variant_name}` : item.product_name}
                           className="w-full h-full object-cover"
                         />
                       ) : (
@@ -420,14 +432,15 @@ export default function OrderDetailClient({ orderId }: OrderDetailClientProps) {
                     <div className="flex-1">
                       <h3 className="font-semibold text-gray-900 mb-1">{item.product_name}</h3>
                       <p className="text-sm text-gray-600 mb-1">{item.variant_name}</p>
-                      <p className="text-xs text-gray-500">SKU: {item.sku}</p>
+                      <p className="text-xs text-gray-500">SKU: {sku || '—'}</p>
                     </div>
                     <div className="text-right">
                       <p className="font-semibold text-gray-900 mb-1">GH₵ {item.unit_price?.toFixed(2)}</p>
                       <p className="text-sm text-gray-600">Qty: {item.quantity}</p>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
 
               <div className="mt-6 pt-6 border-t border-gray-200 space-y-3">

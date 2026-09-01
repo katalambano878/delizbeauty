@@ -27,7 +27,7 @@ export async function GET(
         *,
         categories(name, slug),
         product_categories(category_id, is_primary, categories(name, slug)),
-        product_variants(id, name, price, quantity, option1, option2, image_url, metadata, sort_order),
+        product_variants(id, name, price, quantity, option1, option2, image_url, sku, metadata, sort_order),
         product_images(url, position, alt_text, media_type)
       `)
       .eq('status', 'active');

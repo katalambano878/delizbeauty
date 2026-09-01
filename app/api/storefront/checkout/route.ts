@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { matchProductVariant } from '@/lib/order-item-display';
 
 export async function POST(request: Request) {
   try {
@@ -41,13 +42,13 @@ export async function POST(request: Request) {
       cartUuids.length > 0
         ? supabaseAdmin
             .from('products')
-            .select('id, slug, price, metadata, product_variants(price)')
+            .select('id, slug, price, metadata, product_variants(id, name, option1, option2, image_url, sku, price)')
             .in('id', cartUuids)
         : Promise.resolve({ data: [] as any[] }),
       cartSlugs.length > 0
         ? supabaseAdmin
             .from('products')
-            .select('id, slug, price, metadata, product_variants(price)')
+            .select('id, slug, price, metadata, product_variants(id, name, option1, option2, image_url, sku, price)')
             .in('slug', cartSlugs)
         : Promise.resolve({ data: [] as any[] }),
     ]);
@@ -121,26 +122,23 @@ export async function POST(request: Request) {
     }
 
     // 2. Resolve slugs to UUIDs and build order items
-    const productIds = cart.map((i: any) => i.id).filter(isValidUUID);
-    const { data: productsData } = productIds.length > 0
-      ? await supabaseAdmin.from('products').select('id, metadata').in('id', productIds)
-      : { data: [] };
-    const productMetaMap = new Map((productsData || []).map((p: any) => [p.id, p.metadata]));
-
     const orderItems = [];
     for (const item of cart) {
-      let productId = item.id;
+      let product = productByKey.get(item.id) || productByKey.get(item.slug);
+      let productId = product?.id || item.id;
 
-      if (!isValidUUID(productId)) {
-        const { data: product } = await supabaseAdmin
+      if (!product || !isValidUUID(productId)) {
+        const { data: lookedUp } = await supabaseAdmin
           .from('products')
-          .select('id, metadata')
-          .or(`slug.eq.${productId},id.eq.${productId}`)
+          .select('id, slug, price, metadata, product_variants(id, name, option1, option2, image_url, sku, price)')
+          .or(`slug.eq.${item.slug || item.id},id.eq.${item.id}`)
           .single();
 
-        if (product) {
-          productId = product.id;
-          productMetaMap.set(product.id, product.metadata);
+        if (lookedUp) {
+          product = lookedUp;
+          productId = lookedUp.id;
+          productByKey.set(lookedUp.id, lookedUp);
+          if (lookedUp.slug) productByKey.set(lookedUp.slug, lookedUp);
         } else {
           return NextResponse.json(
             { error: `Product not found: ${item.name}. Please remove it from your cart and try again.` },
@@ -149,19 +147,28 @@ export async function POST(request: Request) {
         }
       }
 
-      const prodMeta = productMetaMap.get(productId);
+      const variant = matchProductVariant(
+        product?.product_variants || [],
+        item.variant,
+        item.variantId
+      );
+      const lineImage = variant?.image_url || item.image || null;
+
       orderItems.push({
         order_id: order.id,
         product_id: productId,
+        variant_id: variant?.id || item.variantId || null,
         product_name: item.name,
-        variant_name: item.variant || null,
+        variant_name: item.variant || variant?.name || null,
+        sku: item.sku || variant?.sku || null,
         quantity: item.quantity,
         unit_price: item.price,
         total_price: item.price * item.quantity,
         metadata: {
-          image: item.image,
+          image: lineImage,
           slug: item.slug,
-          preorder_shipping: prodMeta?.preorder_shipping || null,
+          variant_id: variant?.id || item.variantId || null,
+          preorder_shipping: product?.metadata?.preorder_shipping || null,
         },
       });
     }

@@ -47,6 +47,7 @@ const ORDER_SELECT = `
   order_items (
     id,
     product_id,
+    variant_id,
     product_name,
     variant_name,
     sku,
@@ -54,8 +55,12 @@ const ORDER_SELECT = `
     unit_price,
     total_price,
     metadata,
+    product_variants (
+      id, name, option1, option2, image_url, sku
+    ),
     products (
-      product_images (url)
+      product_images (url, position),
+      product_variants (id, name, option1, option2, image_url, sku)
     )
   )
 `;
