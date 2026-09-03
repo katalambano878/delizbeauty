@@ -1,7 +1,6 @@
 'use client';
 
 import Link from 'next/link';
-import Image from 'next/image';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { cachedQuery } from '@/lib/query-cache';
@@ -11,6 +10,7 @@ import { StructuredData, generateProductSchema, generateBreadcrumbSchema } from 
 import { notFound } from 'next/navigation';
 import { useCart, isPurchasablePrice } from '@/context/CartContext';
 import { usePageTitle } from '@/hooks/usePageTitle';
+import { storageImageUrl } from '@/lib/storage-image';
 
 // Map common color names to hex values for the swatch preview
 function colorNameToHex(name: string): string {
@@ -345,14 +345,10 @@ export default function ProductDetailClient({ slug }: { slug: string }) {
                           preload="none"
                         />
                       ) : mainSrc ? (
-                        <Image
-                          src={mainSrc}
+                        <img
+                          src={storageImageUrl(mainSrc, { width: 900, height: 900 })}
                           alt={product.name}
-                          fill
-                          className="object-cover object-center"
-                          sizes="(max-width: 1024px) 100vw, 50vw"
-                          priority={!variantImage}
-                          quality={80}
+                          className="absolute inset-0 w-full h-full object-cover object-center"
                         />
                       ) : null}
                       {discount > 0 && (
@@ -385,13 +381,10 @@ export default function ProductDetailClient({ slug }: { slug: string }) {
                               </div>
                             </>
                           ) : (
-                            <Image
-                              src={image}
+                            <img
+                              src={storageImageUrl(image, { width: 240, height: 240 })}
                               alt={`${product.name} view ${index + 1}`}
-                              fill
-                              className="object-cover object-center"
-                              sizes="(max-width: 1024px) 25vw, 12vw"
-                              quality={60}
+                              className="absolute inset-0 w-full h-full object-cover object-center"
                             />
                           )}
                         </button>
@@ -491,7 +484,13 @@ export default function ProductDetailClient({ slug }: { slug: string }) {
                               >
                                 {variantImage ? (
                                   <span className="w-8 h-8 rounded-lg overflow-hidden border border-white/20 flex-shrink-0 bg-gray-100">
-                                    <Image src={variantImage} alt={color} width={32} height={32} className="w-full h-full object-cover" />
+                                    <img
+                                      src={storageImageUrl(variantImage, { width: 80, height: 80 })}
+                                      alt={color}
+                                      className="w-full h-full object-cover"
+                                      loading="lazy"
+                                      decoding="async"
+                                    />
                                   </span>
                                 ) : (
                                   <span
@@ -549,7 +548,13 @@ export default function ProductDetailClient({ slug }: { slug: string }) {
                                   >
                                     {variant.image_url ? (
                                       <span className="w-full aspect-square bg-gray-100 block overflow-hidden">
-                                        <Image src={variant.image_url} alt={variant.name} width={100} height={100} className="w-full h-full object-cover" />
+                                        <img
+                                          src={storageImageUrl(variant.image_url, { width: 240, height: 240 })}
+                                          alt={variant.name}
+                                          className="w-full h-full object-cover"
+                                          loading="lazy"
+                                          decoding="async"
+                                        />
                                       </span>
                                     ) : (
                                       <span className="w-full aspect-square bg-gray-100 flex items-center justify-center text-xs text-gray-500 font-medium px-1 text-center">{variant.name}</span>
