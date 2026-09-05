@@ -41,6 +41,8 @@ export async function GET(
       order,
       stockValid: outOfStockItems.length === 0,
       outOfStockItems,
+    }, {
+      headers: { 'Cache-Control': 'private, no-store, no-cache, must-revalidate' },
     });
   } catch (err: any) {
     console.error('[Pay API] Error:', err);

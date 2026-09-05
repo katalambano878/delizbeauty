@@ -73,7 +73,15 @@ const nextConfig: NextConfig = {
           { key: 'Content-Type', value: 'application/manifest+json' }
         ]
       },
-      // Cache storefront API routes aggressively (5 min CDN, revalidate in background)
+      // Pay/stock checks must never be CDN-cached — stale "out of stock"
+      // responses were blocking real orders after inventory lookups changed.
+      {
+        source: '/api/storefront/pay/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'private, no-store, no-cache, must-revalidate' }
+        ]
+      },
+      // Cache storefront catalog APIs (5 min CDN, revalidate in background)
       {
         source: '/api/storefront/:path*',
         headers: [
