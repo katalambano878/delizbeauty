@@ -1,10 +1,6 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+import { supabaseAdmin } from '@/lib/supabase-admin';
+import { isOrderItemInStock, orderItemLabel } from '@/lib/order-stock';
 
 export async function GET(
   _request: Request,
@@ -13,11 +9,10 @@ export async function GET(
   const { orderId } = await params;
 
   try {
-    // Fetch order (by UUID or order_number)
     const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orderId);
     const { data: order, error: orderError } = await supabaseAdmin
       .from('orders')
-      .select('*, order_items(id, product_id, product_name, variant_name, quantity, unit_price, metadata)')
+      .select('*, order_items(id, product_id, variant_id, product_name, variant_name, quantity, unit_price, metadata)')
       .or(isUUID ? `id.eq.${orderId}` : `order_number.eq.${orderId}`)
       .single();
 
@@ -25,52 +20,22 @@ export async function GET(
       return NextResponse.json({ error: 'Order not found' }, { status: 404 });
     }
 
-    // Validate stock for every item in the order
-    const outOfStockItems: string[] = [];
+    const items = Array.isArray(order.order_items) ? order.order_items : [];
+    const productIds = Array.from(
+      new Set(items.map((item: any) => item.product_id).filter(Boolean))
+    );
 
-    if (order.order_items?.length) {
-      for (const item of order.order_items) {
-        if (!item.product_id) continue;
-
-        // Fetch current product stock
-        const { data: product } = await supabaseAdmin
+    const { data: products } = productIds.length > 0
+      ? await supabaseAdmin
           .from('products')
-          .select('stock, status, name')
-          .eq('id', item.product_id)
-          .single();
+          .select('id, name, status, quantity, track_quantity, continue_selling, product_variants(id, name, option1, option2, quantity)')
+          .in('id', productIds as string[])
+      : { data: [] as any[] };
 
-        if (!product) {
-          outOfStockItems.push(item.product_name || 'Unknown product');
-          continue;
-        }
-
-        // Product is inactive / deleted
-        if (product.status && product.status !== 'active') {
-          outOfStockItems.push(item.product_name);
-          continue;
-        }
-
-        // Check variant stock if variant metadata is available
-        const variantId = item.metadata?.variant_id;
-        if (variantId) {
-          const { data: variant } = await supabaseAdmin
-            .from('product_variants')
-            .select('stock')
-            .eq('id', variantId)
-            .single();
-
-          if (variant && typeof variant.stock === 'number' && variant.stock < item.quantity) {
-            outOfStockItems.push(`${item.product_name}${item.variant_name ? ` (${item.variant_name})` : ''}`);
-            continue;
-          }
-        }
-
-        // Check overall product stock
-        if (typeof product.stock === 'number' && product.stock < item.quantity) {
-          outOfStockItems.push(item.product_name);
-        }
-      }
-    }
+    const productById = new Map((products || []).map((product: any) => [product.id, product]));
+    const outOfStockItems = items
+      .filter((item: any) => item.product_id && !isOrderItemInStock(item, productById.get(item.product_id)))
+      .map((item: any) => orderItemLabel(item));
 
     return NextResponse.json({
       order,
