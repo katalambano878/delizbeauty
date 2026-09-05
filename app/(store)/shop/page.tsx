@@ -1,13 +1,19 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { usePageTitle } from '@/hooks/usePageTitle';
 import ProductCard, { type ColorVariant } from '@/components/ProductCard';
 import ProductCardSkeleton from '@/components/skeletons/ProductCardSkeleton';
 import { getColorHex } from '@/components/ProductCard';
 import { cachedQuery } from '@/lib/query-cache';
 import PageHero from '@/components/PageHero';
+import {
+  markShopRestore,
+  readShopReturn,
+  rememberLastProductSlug,
+  saveShopReturn,
+} from '@/lib/browse-return';
 
 const PRODUCTS_PER_PAGE = 12;
 
@@ -75,6 +81,7 @@ function formatProduct(p: any): ShopProduct {
 
 function ShopContent() {
   usePageTitle('Shop All Products');
+  const router = useRouter();
   const searchParams = useSearchParams();
 
   const resolveCategorySlug = (rawCategory: string, list: any[]) => {
@@ -131,6 +138,8 @@ function ShopContent() {
   const abortRef = useRef<AbortController | null>(null);
   const inFlightPageRef = useRef<number>(0);
   const fetchKeyRef = useRef<string>('');
+  const skipPageLoadRef = useRef(false);
+  const didRestoreScrollRef = useRef(false);
 
   // Initialize from URL params
   useEffect(() => {
@@ -168,16 +177,47 @@ function ShopContent() {
   const search = searchParams.get('search') || '';
   const fetchKey = `${selectedCategory}::${search}::${priceRange.join('-')}::${selectedRating}::${sortBy}`;
 
+  const shopHref = () => {
+    const params = new URLSearchParams();
+    if (selectedCategory && selectedCategory !== 'all') params.set('category', selectedCategory);
+    if (search) params.set('search', search);
+    if (sortBy && sortBy !== 'popular') params.set('sort', sortBy);
+    const qs = params.toString();
+    return qs ? `/shop?${qs}` : '/shop';
+  };
+
+  const persistShopReturn = useCallback((slug?: string) => {
+    saveShopReturn({
+      href: shopHref(),
+      fetchKey,
+      pages: page,
+      scrollY: typeof window !== 'undefined' ? window.scrollY : 0,
+      lastSlug: slug || readShopReturn()?.lastSlug || null,
+    });
+  }, [fetchKey, page, selectedCategory, search, sortBy]);
+
+  const replaceShopUrl = (nextCategory: string, nextSort = sortBy) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (!nextCategory || nextCategory === 'all') params.delete('category');
+    else params.set('category', nextCategory);
+    if (!nextSort || nextSort === 'popular') params.delete('sort');
+    else params.set('sort', nextSort);
+    const qs = params.toString();
+    router.replace(qs ? `/shop?${qs}` : '/shop', { scroll: false });
+  };
+
   const loadProducts = useCallback(
-    async (targetPage: number, replace: boolean) => {
+    async (targetPage: number, replace: boolean, accumulatePages = 1) => {
+      const pageToFetch = replace && accumulatePages > 1 ? 1 : targetPage;
+      const limit = PRODUCTS_PER_PAGE * (replace && accumulatePages > 1 ? accumulatePages : 1);
       // Avoid duplicate concurrent requests for the same page+filters
-      if (inFlightPageRef.current === targetPage && fetchKeyRef.current === fetchKey) return;
+      if (inFlightPageRef.current === pageToFetch && fetchKeyRef.current === fetchKey && accumulatePages === 1) return;
 
       // Cancel any previous request before starting a new one
       if (abortRef.current) abortRef.current.abort();
       const controller = new AbortController();
       abortRef.current = controller;
-      inFlightPageRef.current = targetPage;
+      inFlightPageRef.current = pageToFetch;
       fetchKeyRef.current = fetchKey;
 
       if (replace) setInitialLoading(true);
@@ -197,7 +237,7 @@ function ShopContent() {
           }
         }
 
-        const cacheKey = `shop:${selectedCategory}:${search}:${priceRange.join('-')}:${selectedRating}:${sortBy}:${targetPage}`;
+        const cacheKey = `shop:${selectedCategory}:${search}:${priceRange.join('-')}:${selectedRating}:${sortBy}:${pageToFetch}:${limit}`;
         const { data, count } = await cachedQuery<{ data: any[]; count: number }>(
           cacheKey,
           async () => {
@@ -208,8 +248,8 @@ function ShopContent() {
               priceMax: String(priceRange[1]),
               rating: String(selectedRating),
               sortBy,
-              page: String(targetPage),
-              limit: String(PRODUCTS_PER_PAGE),
+              page: String(pageToFetch),
+              limit: String(limit),
             });
             const res = await fetch(`/api/storefront/shop?${params}`, { signal: controller.signal });
             if (!res.ok) {
@@ -251,19 +291,62 @@ function ShopContent() {
     [fetchKey, selectedCategory, search, priceRange, selectedRating, sortBy, categories, products.length]
   );
 
-  // Reset & load page 1 whenever filters change
+  // Reset & load whenever filters change. If the shopper is coming back
+  // to the same listing, reload enough pages to put them where they left.
   useEffect(() => {
-    setPage(1);
+    const snapshot = readShopReturn();
+    const restorePages = snapshot && snapshot.fetchKey === fetchKey
+      ? Math.max(1, snapshot.pages || 1)
+      : 1;
+
+    if (restorePages > 1) skipPageLoadRef.current = true;
+    setPage(restorePages);
     setProducts([]);
     setHasMore(true);
-    loadProducts(1, true);
+    loadProducts(1, true, restorePages);
     // We intentionally only depend on fetchKey; loadProducts is captured fresh via closure
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchKey]);
 
+  useEffect(() => {
+    persistShopReturn();
+  }, [persistShopReturn, products.length]);
+
+  useEffect(() => {
+    return () => persistShopReturn();
+  }, [persistShopReturn]);
+
+  useEffect(() => {
+    didRestoreScrollRef.current = false;
+  }, [fetchKey]);
+
+  useEffect(() => {
+    if (didRestoreScrollRef.current) return;
+    const snapshot = readShopReturn();
+    if (!snapshot || snapshot.fetchKey !== fetchKey) return;
+    if (initialLoading || products.length === 0) return;
+    const slug = snapshot.lastSlug;
+    const target = slug
+      ? document.querySelector(`[data-product-slug="${CSS.escape(slug)}"]`)
+      : null;
+    if (target) {
+      target.scrollIntoView({ block: 'center', behavior: 'instant' });
+      didRestoreScrollRef.current = true;
+    } else if (snapshot.scrollY > 0) {
+      window.scrollTo({ top: snapshot.scrollY, behavior: 'instant' });
+      didRestoreScrollRef.current = true;
+    }
+  }, [initialLoading, products.length, fetchKey]);
+
   // Load subsequent pages when `page` advances (triggered by IntersectionObserver)
   useEffect(() => {
-    if (page > 1) loadProducts(page, false);
+    if (page > 1) {
+      if (skipPageLoadRef.current) {
+        skipPageLoadRef.current = false;
+        return;
+      }
+      loadProducts(page, false);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);
 
@@ -333,7 +416,7 @@ function ShopContent() {
                       <div className="space-y-1">
                         <button
                           onClick={() => {
-                            setSelectedCategory('all');
+                            replaceShopUrl('all');
                             setIsFilterOpen(false);
                           }}
                           className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${selectedCategory === 'all'
@@ -355,8 +438,7 @@ function ShopContent() {
                             <div key={parent.id} className="space-y-1">
                               <button
                                 onClick={() => {
-                                  setSelectedCategory(parent.slug);
-                                  // Don't close filter immediately if exploring hierarchy
+                                  replaceShopUrl(parent.slug);
                                 }}
                                 className={`w-full text-left px-4 py-2 rounded-lg transition-colors flex justify-between items-center ${isSelected
                                   ? 'bg-gray-100 text-gray-900 font-medium'
@@ -373,7 +455,7 @@ function ShopContent() {
                                     <button
                                       key={child.id}
                                       onClick={() => {
-                                        setSelectedCategory(child.slug);
+                                        replaceShopUrl(child.slug);
                                         setIsFilterOpen(false);
                                       }}
                                       className={`w-full text-left px-4 py-1.5 rounded-lg text-sm transition-colors ${selectedCategory === child.slug
@@ -468,7 +550,7 @@ function ShopContent() {
                   <select
                     value={sortBy}
                     onChange={(e) => {
-                      setSortBy(e.target.value);
+                      replaceShopUrl(selectedCategory, e.target.value);
                     }}
                     className="px-4 py-2 pr-8 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-gray-900 text-sm bg-white cursor-pointer"
                   >
@@ -489,7 +571,20 @@ function ShopContent() {
                 </div>
               ) : (
                 <>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-8 md:gap-8" data-product-shop>
+                  <div
+                    className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-8 md:gap-8"
+                    data-product-shop
+                    onClick={(event) => {
+                      const link = (event.target as HTMLElement).closest('a[href^="/product/"]');
+                      if (!link) return;
+                      const href = link.getAttribute('href') || '';
+                      const slug = href.replace(/^\/product\//, '').split('?')[0];
+                      if (!slug) return;
+                      rememberLastProductSlug(slug);
+                      persistShopReturn(slug);
+                      markShopRestore();
+                    }}
+                  >
                     {products.map(product => (
                       <ProductCard key={product.id} {...product} />
                     ))}
@@ -507,9 +602,9 @@ function ShopContent() {
                       <p className="text-gray-600 mb-8">Try adjusting your filters to find what you're looking for</p>
                       <button
                         onClick={() => {
-                          setSelectedCategory('all');
                           setPriceRange([0, 5000]);
                           setSelectedRating(0);
+                          replaceShopUrl('all');
                         }}
                         className="inline-flex items-center bg-gray-900 hover:bg-gray-800 text-white px-6 py-3 rounded-lg font-medium transition-colors whitespace-nowrap"
                       >

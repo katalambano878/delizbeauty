@@ -84,7 +84,9 @@ export default function StoreLayout({
       <Suspense fallback={null}>
         <NavigationProgress />
       </Suspense>
-      <ScrollToTop />
+      <Suspense fallback={null}>
+        <ScrollToTop />
+      </Suspense>
       <div className="min-h-screen bg-gray-50">
         <PWASplash />
         <PWAInstaller />

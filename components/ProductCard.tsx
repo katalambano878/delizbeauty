@@ -84,7 +84,7 @@ export default function ProductCard({
   const formatPrice = (val: number) => `GH\u20B5${val.toFixed(2)}`;
 
   return (
-    <div className="group bg-transparent rounded-lg h-full flex flex-col hover-lift">
+    <div className="group bg-transparent rounded-lg h-full flex flex-col hover-lift" data-product-slug={slug}>
       <Link href={`/product/${slug}`} className="relative block aspect-[3/4] overflow-hidden rounded-xl bg-gray-100 mb-4 shadow-sm group-hover:shadow-xl transition-all duration-300">
         <LazyImage
           src={image}

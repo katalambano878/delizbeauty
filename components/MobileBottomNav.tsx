@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useCart } from '@/context/CartContext';
 import { useWishlist } from '@/context/WishlistContext';
 import { useState, useEffect } from 'react';
+import { getContinueShoppingHref, markShopRestore } from '@/lib/browse-return';
 
 export default function MobileBottomNav() {
   const pathname = usePathname();
@@ -13,6 +14,7 @@ export default function MobileBottomNav() {
   const [isVisible, setIsVisible] = useState(true);
   const [lastScrollY, setLastScrollY] = useState(0);
   const [isStandalone, setIsStandalone] = useState(false);
+  const [shopHref, setShopHref] = useState('/shop');
 
   const isActive = (path: string) => {
     if (path === '/') return pathname === '/';
@@ -24,7 +26,8 @@ export default function MobileBottomNav() {
     const standalone = window.matchMedia('(display-mode: standalone)').matches
       || (window.navigator as any).standalone === true;
     setIsStandalone(standalone);
-  }, []);
+    setShopHref(getContinueShoppingHref());
+  }, [pathname]);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -50,7 +53,7 @@ export default function MobileBottomNav() {
       iconInactive: 'ri-home-5-line',
     },
     {
-      href: '/shop',
+      href: shopHref,
       label: 'Shop',
       iconActive: 'ri-store-3-fill',
       iconInactive: 'ri-store-3-line',
@@ -92,11 +95,16 @@ export default function MobileBottomNav() {
         <div className="bg-white/90 backdrop-blur-xl border-t border-gray-200/60 shadow-[0_-4px_30px_rgba(0,0,0,0.08)]">
           <div className={`grid grid-cols-5 ${isStandalone ? 'pb-6' : 'pb-1'} pt-1`}>
             {navItems.map((item) => {
-              const active = isActive(item.href);
+              const pathOnly = item.href.split('?')[0];
+              const active = item.label === 'Shop' ? pathname.startsWith('/shop') : isActive(pathOnly);
               return (
                 <Link
-                  key={item.href}
+                  key={item.label}
                   href={item.href}
+                  scroll={item.label === 'Shop' ? false : true}
+                  onClick={() => {
+                    if (item.label === 'Shop') markShopRestore();
+                  }}
                   className={`flex flex-col items-center justify-center py-2 transition-all duration-200 relative group active:scale-90 ${
                     active ? 'text-gray-900' : 'text-gray-400'
                   }`}

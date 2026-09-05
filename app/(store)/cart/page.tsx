@@ -8,6 +8,7 @@ import AdvancedCouponSystem from '@/components/AdvancedCouponSystem';
 import { useCart } from '@/context/CartContext';
 import PageHero from '@/components/PageHero';
 import { usePageTitle } from '@/hooks/usePageTitle';
+import ContinueShoppingLink from '@/components/ContinueShoppingLink';
 
 export default function CartPage() {
   usePageTitle('Shopping Cart');
@@ -73,9 +74,9 @@ export default function CartPage() {
               </div>
               <h2 className="text-3xl font-bold text-gray-900 mb-4">Your cart is empty</h2>
               <p className="text-gray-600 mb-8 text-lg">Looks like you&#39;t added anything to your cart yet</p>
-              <Link href="/shop" className="inline-block bg-gray-900 hover:bg-gray-800 text-white px-8 py-4 rounded-lg font-semibold transition-colors whitespace-nowrap">
+              <ContinueShoppingLink className="inline-block bg-gray-900 hover:bg-gray-800 text-white px-8 py-4 rounded-lg font-semibold transition-colors whitespace-nowrap">
                 Continue Shopping
-              </Link>
+              </ContinueShoppingLink>
             </div>
           </section>
         ) : (
@@ -248,12 +249,9 @@ export default function CartPage() {
                       Proceed to Checkout
                     </Link>
 
-                    <Link
-                      href="/shop"
-                      className="block w-full text-center text-gray-900 hover:text-gray-800 font-semibold py-2 whitespace-nowrap"
-                    >
+                    <ContinueShoppingLink className="block w-full text-center text-gray-900 hover:text-gray-800 font-semibold py-2 whitespace-nowrap">
                       Continue Shopping
-                    </Link>
+                    </ContinueShoppingLink>
 
                     <div className="mt-6 pt-6 border-t border-gray-200 space-y-3">
                       <div className="flex items-center text-sm text-gray-600">

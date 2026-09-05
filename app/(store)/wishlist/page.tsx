@@ -6,6 +6,7 @@ import PageHero from '@/components/PageHero';
 import { useWishlist } from '@/context/WishlistContext';
 import ProductCard from '@/components/ProductCard';
 import { usePageTitle } from '@/hooks/usePageTitle';
+import ContinueShoppingLink from '@/components/ContinueShoppingLink';
 
 export default function WishlistPage() {
   usePageTitle('Wishlist');
@@ -74,9 +75,9 @@ export default function WishlistPage() {
             </div>
             <h2 className="text-3xl font-bold text-gray-900 mb-4">Your wishlist is empty</h2>
             <p className="text-gray-600 mb-8 text-lg">Save your favourite items here to easily find them later</p>
-            <Link href="/shop" className="inline-block bg-gray-900 hover:bg-gray-800 text-white px-8 py-4 rounded-lg font-semibold transition-colors whitespace-nowrap">
+            <ContinueShoppingLink className="inline-block bg-gray-900 hover:bg-gray-800 text-white px-8 py-4 rounded-lg font-semibold transition-colors whitespace-nowrap">
               Explore Products
-            </Link>
+            </ContinueShoppingLink>
           </div>
         </section>
       ) : (

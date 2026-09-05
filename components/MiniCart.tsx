@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useCart } from '@/context/CartContext';
+import ContinueShoppingLink from '@/components/ContinueShoppingLink';
 
 interface MiniCartProps {
   isOpen: boolean;
@@ -77,13 +78,12 @@ export default function MiniCart({ isOpen, onClose }: MiniCartProps) {
             </div>
             <h3 className="text-xl font-semibold text-gray-900 mb-2">Your cart is empty</h3>
             <p className="text-gray-600 mb-6">Add items to get started</p>
-            <Link
-              href="/shop"
+            <ContinueShoppingLink
               onClick={onClose}
               className="px-6 py-3 bg-gray-900 text-white rounded-lg font-semibold hover:bg-gray-800 transition-colors whitespace-nowrap cursor-pointer"
             >
               Continue Shopping
-            </Link>
+            </ContinueShoppingLink>
           </div>
         ) : (
           <>

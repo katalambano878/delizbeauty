@@ -37,9 +37,8 @@ export function isPurchasablePrice(price: unknown): boolean {
 }
 
 export function CartProvider({ children }: { children: ReactNode }) {
-    const [cart, setCart] = useState<CartItem[]>([]);
+    const [cart, setCart] = useState<CartItem[] | null>(null);
     const [isCartOpen, setIsCartOpen] = useState(false);
-    const [isInitialized, setIsInitialized] = useState(false);
 
     // Direct cart toggle
     const handleSetCartOpen = (isOpen: boolean) => {
@@ -71,25 +70,22 @@ export function CartProvider({ children }: { children: ReactNode }) {
                     return true;
                 });
                 setCart(migratedCart);
-                // If items were removed, update localStorage immediately
-                if (migratedCart.length !== parsed.length) {
-                    localStorage.setItem('cart', JSON.stringify(migratedCart));
-                }
             } catch (e) {
                 console.error('Failed to parse cart:', e);
                 localStorage.removeItem('cart');
+                setCart([]);
             }
+        } else {
+            setCart([]);
         }
-        setIsInitialized(true);
     }, []);
 
-    // Save cart to localStorage whenever it changes
+    // Save only after the first localStorage read so a remount cannot wipe the cart.
     useEffect(() => {
-        if (isInitialized) {
-            localStorage.setItem('cart', JSON.stringify(cart));
-            window.dispatchEvent(new Event('cartUpdated')); // Keep compatibility with legacy listeners if any
-        }
-    }, [cart, isInitialized]);
+        if (cart === null) return;
+        localStorage.setItem('cart', JSON.stringify(cart));
+        window.dispatchEvent(new Event('cartUpdated'));
+    }, [cart]);
 
     const addToCart = (newItem: CartItem): boolean => {
         // Block items with no price or a price of 0 — they cannot be purchased.
@@ -102,23 +98,22 @@ export function CartProvider({ children }: { children: ReactNode }) {
         }
 
         setCart((prevCart) => {
-            const existingItemIndex = prevCart.findIndex(
+            const list = prevCart || [];
+            const existingItemIndex = list.findIndex(
                 (item) => item.id === newItem.id && item.variant === newItem.variant
             );
 
             if (existingItemIndex > -1) {
-                const newCart = [...prevCart];
+                const newCart = [...list];
                 const existingItem = newCart[existingItemIndex];
-                // Ensure we don't exceed max stock
                 const newQuantity = Math.min(
                     existingItem.quantity + newItem.quantity,
                     existingItem.maxStock
                 );
                 newCart[existingItemIndex] = { ...existingItem, quantity: newQuantity };
                 return newCart;
-            } else {
-                return [...prevCart, newItem];
             }
+            return [...list, newItem];
         });
 
         setIsCartOpen(true); // Open cart when item is added
@@ -127,26 +122,24 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
     const removeFromCart = (itemId: string, variant?: string) => {
         setCart((prevCart) =>
-            prevCart.filter((item) => !(item.id === itemId && item.variant === variant))
+            (prevCart || []).filter((item) => !(item.id === itemId && item.variant === variant))
         );
     };
 
     const updateQuantity = (itemId: string, quantity: number, variant?: string) => {
         setCart((prevCart) => {
-            const item = prevCart.find(i => i.id === itemId && i.variant === variant);
-            if (!item) return prevCart;
+            const list = prevCart || [];
+            const item = list.find(i => i.id === itemId && i.variant === variant);
+            if (!item) return list;
 
             const minQty = item.moq || 1;
-            
-            // If trying to reduce below MOQ, remove the item
             if (quantity < minQty) {
-                return prevCart.filter(i => !(i.id === itemId && i.variant === variant));
+                return list.filter(i => !(i.id === itemId && i.variant === variant));
             }
 
-            // Clamp quantity between MOQ and maxStock
             const clampedQty = Math.min(Math.max(quantity, minQty), item.maxStock);
 
-            return prevCart.map((i) =>
+            return list.map((i) =>
                 i.id === itemId && i.variant === variant
                     ? { ...i, quantity: clampedQty }
                     : i
@@ -158,12 +151,13 @@ export function CartProvider({ children }: { children: ReactNode }) {
         setCart([]);
     };
 
-    const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
-    const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const readyCart = cart || [];
+    const cartCount = readyCart.reduce((sum, item) => sum + item.quantity, 0);
+    const subtotal = readyCart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
     return (
         <CartContext.Provider value={{
-            cart,
+            cart: readyCart,
             addToCart,
             removeFromCart,
             updateQuantity,
