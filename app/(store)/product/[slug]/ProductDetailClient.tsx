@@ -10,7 +10,7 @@ import { StructuredData, generateProductSchema, generateBreadcrumbSchema } from 
 import { notFound } from 'next/navigation';
 import { useCart, isPurchasablePrice } from '@/context/CartContext';
 import { usePageTitle } from '@/hooks/usePageTitle';
-import { storageImageUrl } from '@/lib/storage-image';
+import { originalOnError, storageImageUrl } from '@/lib/storage-image';
 import ContinueShoppingLink from '@/components/ContinueShoppingLink';
 
 // Map common color names to hex values for the swatch preview
@@ -129,6 +129,7 @@ export default function ProductDetailClient({ slug }: { slug: string }) {
         }
 
         setProduct(transformedProduct);
+        setLoading(false);
 
         // Set initial quantity to MOQ
         if (transformedProduct.moq > 1) {
@@ -350,6 +351,7 @@ export default function ProductDetailClient({ slug }: { slug: string }) {
                           src={storageImageUrl(mainSrc, { width: 900, height: 900 })}
                           alt={product.name}
                           className="absolute inset-0 w-full h-full object-cover object-center"
+                          onError={(event) => originalOnError(event, mainSrc)}
                         />
                       ) : null}
                       {discount > 0 && (
@@ -386,6 +388,7 @@ export default function ProductDetailClient({ slug }: { slug: string }) {
                               src={storageImageUrl(image, { width: 240, height: 240 })}
                               alt={`${product.name} view ${index + 1}`}
                               className="absolute inset-0 w-full h-full object-cover object-center"
+                              onError={(event) => originalOnError(event, image)}
                             />
                           )}
                         </button>
@@ -491,6 +494,7 @@ export default function ProductDetailClient({ slug }: { slug: string }) {
                                       className="w-full h-full object-cover"
                                       loading="lazy"
                                       decoding="async"
+                                      onError={(event) => originalOnError(event, variantImage)}
                                     />
                                   </span>
                                 ) : (
@@ -555,6 +559,7 @@ export default function ProductDetailClient({ slug }: { slug: string }) {
                                           className="w-full h-full object-cover"
                                           loading="lazy"
                                           decoding="async"
+                                          onError={(event) => originalOnError(event, variant.image_url)}
                                         />
                                       </span>
                                     ) : (

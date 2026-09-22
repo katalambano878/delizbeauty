@@ -37,3 +37,15 @@ export function storageImageUrl(
     return `${transformed}${joiner}width=${width}&height=${height}&resize=${resize}`;
   }
 }
+
+/** If the resized URL fails, show the original file instead of a broken image. */
+export function originalOnError(
+  event: { currentTarget: HTMLImageElement },
+  original: string | null | undefined
+) {
+  const img = event.currentTarget;
+  const fallback = String(original ?? '').trim();
+  if (!fallback || img.dataset.fallback === '1') return;
+  img.dataset.fallback = '1';
+  if (img.src !== fallback) img.src = fallback;
+}

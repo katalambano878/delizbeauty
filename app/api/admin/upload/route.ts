@@ -1,5 +1,31 @@
 import { NextResponse } from 'next/server';
+import sharp from 'sharp';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+
+const MAX_EDGE = 1600;
+
+async function prepareUpload(file: File): Promise<{ body: Buffer | File; contentType: string; ext: string }> {
+  const rawExt = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+  const type = file.type || '';
+  if (type.startsWith('video/') || rawExt === 'mp4' || rawExt === 'mov' || rawExt === 'webm') {
+    return { body: file, contentType: type || 'video/mp4', ext: rawExt };
+  }
+  if (!type.startsWith('image/') && !['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'].includes(rawExt)) {
+    return { body: file, contentType: type || 'application/octet-stream', ext: rawExt };
+  }
+
+  try {
+    const input = Buffer.from(await file.arrayBuffer());
+    const body = await sharp(input, { failOn: 'none', limitInputPixels: false })
+      .rotate()
+      .resize(MAX_EDGE, MAX_EDGE, { fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 80, mozjpeg: true })
+      .toBuffer();
+    return { body, contentType: 'image/jpeg', ext: 'jpg' };
+  } catch {
+    return { body: file, contentType: type || 'application/octet-stream', ext: rawExt };
+  }
+}
 
 function getAccessToken(request: Request): string | null {
   const authHeader = request.headers.get('authorization');
@@ -63,11 +89,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing file' }, { status: 400 });
     }
 
-    const ext = file.name.split('.').pop() || 'jpg';
-    const path = `cat-${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+    const prepared = await prepareUpload(file);
+    const path = `cat-${Date.now()}-${Math.random().toString(36).slice(2)}.${prepared.ext}`;
 
-    const { error } = await supabaseAdmin.storage.from(bucket).upload(path, file, {
-      cacheControl: '3600',
+    const { error } = await supabaseAdmin.storage.from(bucket).upload(path, prepared.body, {
+      cacheControl: '31536000',
+      contentType: prepared.contentType,
       upsert: false,
     });
 

@@ -7,6 +7,7 @@ import { useCart } from '@/context/CartContext';
 import { supabase } from '@/lib/supabase';
 import { useCMS } from '@/context/CMSContext';
 import AnnouncementBar from './AnnouncementBar';
+import { originalOnError, storageImageUrl } from '@/lib/storage-image';
 
 const NavLink = ({ href, children, isMobile, onClick }: { href: string; children: React.ReactNode; isMobile?: boolean, onClick?: () => void }) => {
   if (isMobile) {
@@ -193,7 +194,12 @@ export default function Header() {
               >
                 <div className="w-12 h-12 rounded-lg bg-gray-100 overflow-hidden flex-shrink-0">
                   {product.image ? (
-                    <img src={product.image} alt={product.name} className="w-full h-full object-cover" />
+                    <img
+                      src={storageImageUrl(product.image, { width: 160, height: 160 })}
+                      alt={product.name}
+                      className="w-full h-full object-cover"
+                      onError={(event) => originalOnError(event, product.image)}
+                    />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-gray-300">
                       <i className="ri-image-line"></i>

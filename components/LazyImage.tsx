@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Image from 'next/image';
+import { storageImageUrl } from '@/lib/storage-image';
 
 interface LazyImageProps {
   src: string;
@@ -24,8 +25,16 @@ export default function LazyImage({
   onLoad,
   sizes = '(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw'
 }: LazyImageProps) {
+  const resized = storageImageUrl(src, { width: width && width > 0 ? width : 720, height: height && height > 0 ? height : 960 });
+  const [currentSrc, setCurrentSrc] = useState(resized);
   const [isLoaded, setIsLoaded] = useState(false);
   const [hasError, setHasError] = useState(false);
+
+  useEffect(() => {
+    setCurrentSrc(resized);
+    setIsLoaded(false);
+    setHasError(false);
+  }, [resized]);
 
   const handleLoad = () => {
     setIsLoaded(true);
@@ -33,6 +42,11 @@ export default function LazyImage({
   };
 
   const handleError = () => {
+    if (currentSrc !== src && src) {
+      setCurrentSrc(src);
+      setIsLoaded(false);
+      return;
+    }
     setHasError(true);
     setIsLoaded(true);
     onLoad?.();
@@ -55,7 +69,7 @@ export default function LazyImage({
         <div className="absolute inset-0 bg-gray-200 animate-pulse z-10"></div>
       )}
       <Image
-        src={src}
+        src={currentSrc}
         alt={alt}
         fill
         sizes={sizes}
