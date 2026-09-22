@@ -1,44 +1,40 @@
-const PUBLIC_OBJECT = /\/storage\/v1\/object\/public\//i;
 const PUBLIC_RENDER = /\/storage\/v1\/render\/image\/public\//i;
 
 type ResizeMode = 'cover' | 'contain';
 
 /**
- * Point self-hosted Supabase public object URLs at the image renderer so
- * product/variant thumbs are not the original 2–4k phone photos.
+ * Product files are already resized before they are stored.
+ * The on-server resizer is uncached and slow on this host, and it
+ * refuses very large phone photos, which showed up as a broken image.
+ * Always use the stored file. If a URL still points at the resizer,
+ * send it back to the stored file.
  */
 export function storageImageUrl(
   url: string | null | undefined,
-  opts?: { width?: number; height?: number; resize?: ResizeMode }
+  _opts?: { width?: number; height?: number; resize?: ResizeMode }
 ): string {
   const src = String(url ?? '').trim();
-  if (!src) return '';
+  if (!src || !PUBLIC_RENDER.test(src)) return src;
 
-  const width = opts?.width;
-  if (!width || (!PUBLIC_OBJECT.test(src) && !PUBLIC_RENDER.test(src))) {
-    return src;
-  }
-
-  const height = opts?.height ?? width;
-  const resize = opts?.resize === 'contain' ? 'contain' : 'cover';
-  const transformed = src.replace(
-    '/storage/v1/object/public/',
-    '/storage/v1/render/image/public/'
+  const objectUrl = src.replace(
+    '/storage/v1/render/image/public/',
+    '/storage/v1/object/public/'
   );
 
   try {
-    const parsed = new URL(transformed);
-    parsed.searchParams.set('width', String(width));
-    parsed.searchParams.set('height', String(height));
-    parsed.searchParams.set('resize', resize);
-    return parsed.toString();
+    const parsed = new URL(objectUrl);
+    parsed.searchParams.delete('width');
+    parsed.searchParams.delete('height');
+    parsed.searchParams.delete('resize');
+    parsed.searchParams.delete('quality');
+    const query = parsed.searchParams.toString();
+    return query ? `${parsed.origin}${parsed.pathname}?${query}` : `${parsed.origin}${parsed.pathname}`;
   } catch {
-    const joiner = transformed.includes('?') ? '&' : '?';
-    return `${transformed}${joiner}width=${width}&height=${height}&resize=${resize}`;
+    return objectUrl.split('?')[0];
   }
 }
 
-/** If the resized URL fails, show the original file instead of a broken image. */
+/** If a derived URL fails, show the original file instead of a broken image. */
 export function originalOnError(
   event: { currentTarget: HTMLImageElement },
   original: string | null | undefined
