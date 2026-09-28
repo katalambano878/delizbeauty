@@ -30,6 +30,7 @@
   "private": true,
   "scripts": {
     "build": "next build",
+    "start": "next start -H 0.0.0.0 -p 3000",
     "dev": "cross-env NODE_ENV=development next dev -H 0.0.0.0 -p 3009",
     "lint": "next lint",
     "create-admin": "node scripts/create-admin.mjs"
