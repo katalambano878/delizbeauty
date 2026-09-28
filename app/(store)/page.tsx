@@ -67,7 +67,7 @@ export default function Home() {
     async function fetchData() {
       try {
         // Featured products from API (service role) so product_images always load
-        const res = await fetch('/api/storefront/products?featured=true&limit=8');
+        const res = await fetch('/api/storefront/products?featured=true&limit=32');
         if (res.ok) {
           const productsData = await res.json();
           setFeaturedProducts(Array.isArray(productsData) ? productsData : []);
