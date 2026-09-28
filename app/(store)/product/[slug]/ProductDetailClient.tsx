@@ -136,11 +136,13 @@ export default function ProductDetailClient({ slug }: { slug: string }) {
           setQuantity(transformedProduct.moq);
         }
 
-        // If variants exist, do NOT pre-select — force user to choose
-        // Reset variant and color selection
-        setSelectedVariant(null);
-        setSelectedSize('');
-        setSelectedColor('');
+        // One option is already the choice. Several options still wait for the shopper.
+        const onlyVariant = transformedProduct.variants?.length === 1
+          ? transformedProduct.variants[0]
+          : null;
+        setSelectedVariant(onlyVariant);
+        setSelectedSize(onlyVariant?.name || '');
+        setSelectedColor(onlyVariant?.color || '');
 
         // Fetch related products sharing any category (cached for 5 minutes)
         const relatedCategoryIds = (dataToTransform.product_categories || [])

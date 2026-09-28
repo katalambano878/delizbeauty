@@ -73,8 +73,8 @@
       "purpose": "maskable"
     },
     {
-      "src": "/logo.png",
-      "sizes": "any",
+      "src": "/icons/icon-512x512.png",
+      "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     }
