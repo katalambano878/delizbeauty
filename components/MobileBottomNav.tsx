@@ -13,7 +13,6 @@ export default function MobileBottomNav() {
   const { wishlistCount } = useWishlist();
   const [isVisible, setIsVisible] = useState(true);
   const [lastScrollY, setLastScrollY] = useState(0);
-  const [isStandalone, setIsStandalone] = useState(false);
   const [shopHref, setShopHref] = useState('/shop');
 
   const isActive = (path: string) => {
@@ -22,10 +21,6 @@ export default function MobileBottomNav() {
   };
 
   useEffect(() => {
-    // Detect standalone PWA mode
-    const standalone = window.matchMedia('(display-mode: standalone)').matches
-      || (window.navigator as any).standalone === true;
-    setIsStandalone(standalone);
     setShopHref(getContinueShoppingHref());
   }, [pathname]);
 
@@ -87,59 +82,43 @@ export default function MobileBottomNav() {
       }`}
       aria-label="Mobile navigation"
     >
-      {/* Frosted glass background */}
-      <div className="relative">
-        {/* Top shadow gradient */}
-        <div className="absolute -top-6 left-0 right-0 h-6 bg-gradient-to-t from-white/80 to-transparent pointer-events-none" />
-        
-        <div className="bg-white/90 backdrop-blur-xl border-t border-gray-200/60 shadow-[0_-4px_30px_rgba(0,0,0,0.08)]">
-          <div className={`grid grid-cols-5 ${isStandalone ? 'pb-6' : 'pb-1'} pt-1`}>
-            {navItems.map((item) => {
-              const pathOnly = item.href.split('?')[0];
-              const active = item.label === 'Shop' ? pathname.startsWith('/shop') : isActive(pathOnly);
-              return (
-                <Link
-                  key={item.label}
-                  href={item.href}
-                  scroll={item.label === 'Shop' ? false : true}
-                  onClick={() => {
-                    if (item.label === 'Shop') markShopRestore();
-                  }}
-                  className={`flex flex-col items-center justify-center py-2 transition-all duration-200 relative group active:scale-90 ${
-                    active ? 'text-gray-900' : 'text-gray-400'
-                  }`}
-                  aria-label={item.label}
-                  aria-current={active ? 'page' : undefined}
-                >
-                  {/* Active indicator pill */}
-                  {active && (
-                    <div className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-1 bg-gray-900 rounded-full transition-all duration-300" />
+      <div className="bg-white/95 backdrop-blur-xl border-t border-black/[0.06] shadow-[0_-8px_30px_-18px_rgba(0,0,0,0.35)] pb-[max(0.45rem,env(safe-area-inset-bottom))]">
+        <div className="grid grid-cols-5 gap-1 px-2 pt-2">
+          {navItems.map((item) => {
+            const pathOnly = item.href.split('?')[0];
+            const active = item.label === 'Shop' ? pathname.startsWith('/shop') : isActive(pathOnly);
+            return (
+              <Link
+                key={item.label}
+                href={item.href}
+                scroll={item.label === 'Shop' ? false : true}
+                onClick={() => {
+                  if (item.label === 'Shop') markShopRestore();
+                }}
+                className="flex flex-col items-center justify-center gap-1 min-h-11 py-1 active:scale-[0.96] transition-transform"
+                aria-label={item.label}
+                aria-current={active ? 'page' : undefined}
+              >
+                <span className={`relative flex h-8 w-12 items-center justify-center rounded-full transition-colors ${
+                  active ? 'bg-gray-950 text-white' : 'text-gray-400'
+                }`}>
+                  <i className={`${active ? item.iconActive : item.iconInactive} text-[18px]`} />
+                  {item.badge !== undefined && item.badge > 0 && (
+                    <span className={`absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full text-[9px] font-bold flex items-center justify-center ${
+                      active ? 'bg-white text-gray-950' : 'bg-gray-950 text-white'
+                    }`}>
+                      {item.badge > 99 ? '99+' : item.badge}
+                    </span>
                   )}
-                  
-                  <div className="relative w-7 h-7 flex items-center justify-center">
-                    <i
-                      className={`${active ? item.iconActive : item.iconInactive} text-[22px] transition-all duration-200 ${
-                        active ? 'scale-110' : 'group-hover:scale-105'
-                      }`}
-                    />
-                    
-                    {/* Badge */}
-                    {item.badge !== undefined && item.badge > 0 && (
-                      <span className="absolute -top-1.5 -right-2 min-w-[18px] h-[18px] bg-gray-900 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1 shadow-sm animate-scale-in">
-                        {item.badge > 99 ? '99+' : item.badge}
-                      </span>
-                    )}
-                  </div>
-                  
-                  <span className={`text-[10px] font-semibold mt-0.5 transition-all duration-200 ${
-                    active ? 'opacity-100' : 'opacity-70'
-                  }`}>
-                    {item.label}
-                  </span>
-                </Link>
-              );
-            })}
-          </div>
+                </span>
+                <span className={`text-[10px] leading-none tracking-wide ${
+                  active ? 'font-semibold text-gray-950' : 'font-medium text-gray-400'
+                }`}>
+                  {item.label}
+                </span>
+              </Link>
+            );
+          })}
         </div>
       </div>
     </nav>

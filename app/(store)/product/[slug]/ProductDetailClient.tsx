@@ -310,16 +310,16 @@ export default function ProductDetailClient({ slug }: { slug: string }) {
       <StructuredData data={breadcrumbSchema} />
 
       <main className="min-h-screen bg-white">
-        <section className="py-8 bg-gray-50 border-b border-gray-200">
+        <section className="py-4 border-b border-gray-100">
           <div className="max-w-7xl mx-auto px-4 sm:px-6">
-            <nav className="flex items-center space-x-2 text-sm flex-wrap gap-y-2">
-              <Link href="/" className="text-gray-600 hover:text-gray-900 transition-colors">Home</Link>
-              <i className="ri-arrow-right-s-line text-gray-400"></i>
-              <ContinueShoppingLink className="text-gray-600 hover:text-gray-900 transition-colors">Shop</ContinueShoppingLink>
-              <i className="ri-arrow-right-s-line text-gray-400"></i>
-              <Link href="#" className="text-gray-600 hover:text-gray-900 transition-colors">{product.category}</Link>
-              <i className="ri-arrow-right-s-line text-gray-400"></i>
-              <span className="text-gray-900 font-medium truncate max-w-[200px]">{product.name}</span>
+            <nav className="flex items-center gap-x-1.5 gap-y-1 text-[13px] text-gray-500 flex-wrap">
+              <Link href="/" className="hover:text-gray-900 transition-colors">Home</Link>
+              <i className="ri-arrow-right-s-line text-gray-300"></i>
+              <ContinueShoppingLink className="hover:text-gray-900 transition-colors">Shop</ContinueShoppingLink>
+              <i className="ri-arrow-right-s-line text-gray-300"></i>
+              <Link href="#" className="hover:text-gray-900 transition-colors">{product.category}</Link>
+              <i className="ri-arrow-right-s-line text-gray-300"></i>
+              <span className="text-gray-900 truncate max-w-[220px]">{product.name}</span>
             </nav>
           </div>
         </section>
@@ -334,7 +334,7 @@ export default function ProductDetailClient({ slug }: { slug: string }) {
                   const mainSrc = variantImage || product.images[selectedImage];
                   const mainIsVideo = !variantImage && product.media?.[selectedImage]?.type === 'video';
                   return (
-                    <div className="relative aspect-square rounded-2xl overflow-hidden bg-gray-100 mb-4 shadow-lg border border-gray-100">
+                    <div className="relative aspect-square rounded-[1.75rem] overflow-hidden bg-[#f4f1ec] mb-4 border border-black/[0.06] shadow-[0_20px_50px_-28px_rgba(0,0,0,0.45)]">
                       {mainIsVideo ? (
                         <video
                           key={product.images[selectedImage]}
@@ -350,7 +350,7 @@ export default function ProductDetailClient({ slug }: { slug: string }) {
                         <img
                           src={storageImageUrl(mainSrc, { width: 900, height: 900 })}
                           alt={product.name}
-                          className="absolute inset-0 w-full h-full object-cover object-center"
+                          className="absolute inset-0 w-full h-full object-contain object-center p-6 sm:p-10"
                           onError={(event) => originalOnError(event, mainSrc)}
                         />
                       ) : null}
@@ -398,46 +398,54 @@ export default function ProductDetailClient({ slug }: { slug: string }) {
                 )}
               </div>
 
-              <div>
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <p className="text-sm text-gray-900 font-semibold mb-2">{product.category}</p>
-                    <h1 className="text-3xl lg:text-4xl font-bold text-gray-900 mb-3">{product.name}</h1>
+              <div className="lg:pt-2">
+                <div className="flex items-start justify-between gap-4 mb-5">
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500 mb-2">{product.category}</p>
+                    <h1 className="font-serif text-[2rem] lg:text-[2.75rem] leading-[1.08] text-gray-950 text-balance">{product.name}</h1>
                   </div>
                   <button
                     onClick={() => setIsWishlisted(!isWishlisted)}
-                    className="w-12 h-12 flex items-center justify-center border-2 border-gray-200 hover:border-gray-900 rounded-full transition-colors cursor-pointer"
+                    aria-label={isWishlisted ? 'Remove from wishlist' : 'Save to wishlist'}
+                    className="w-11 h-11 shrink-0 flex items-center justify-center border border-gray-200 hover:border-gray-900 rounded-full transition-colors cursor-pointer"
                   >
-                    <i className={`${isWishlisted ? 'ri-heart-fill text-red-600' : 'ri-heart-line text-gray-700'} text-xl`}></i>
+                    <i className={`${isWishlisted ? 'ri-heart-fill text-red-600' : 'ri-heart-line text-gray-700'} text-lg`}></i>
                   </button>
                 </div>
 
-                <div className="flex items-center mb-6">
-                  <div className="flex items-center space-x-1 mr-3">
-                    {[1, 2, 3, 4, 5].map((star) => (
-                      <i
-                        key={star}
-                        className={`${star <= Math.round(product.rating) ? 'ri-star-fill text-amber-400' : 'ri-star-line text-gray-300'} text-lg`}
-                      ></i>
-                    ))}
+                {Number(product.rating) > 0 && (
+                  <div className="flex items-center mb-5">
+                    <div className="flex items-center gap-0.5 mr-2">
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <i
+                          key={star}
+                          className={`${star <= Math.round(product.rating) ? 'ri-star-fill text-amber-400' : 'ri-star-line text-gray-300'} text-base`}
+                        ></i>
+                      ))}
+                    </div>
+                    <span className="text-sm text-gray-600 tabular-nums">{Number(product.rating).toFixed(1)}</span>
                   </div>
-                  <span className="text-gray-700 font-medium">{Number(product.rating).toFixed(1)}</span>
-                </div>
+                )}
 
-                <div className="flex items-baseline space-x-4 mb-6">
+                <div className="flex items-baseline gap-3 mb-6">
                   {hasVariants && !selectedVariant ? (
-                    <span className="text-3xl lg:text-4xl font-bold text-gray-900">
+                    <span className="text-[2rem] font-semibold text-gray-950 tabular-nums tracking-tight">
                       From GH₵{minVariantPrice.toFixed(2)}
                     </span>
                   ) : (
-                    <span className="text-3xl lg:text-4xl font-bold text-gray-900">GH₵{activePrice.toFixed(2)}</span>
+                    <span className="text-[2rem] font-semibold text-gray-950 tabular-nums tracking-tight">GH₵{activePrice.toFixed(2)}</span>
                   )}
                   {product.compare_at_price && product.compare_at_price > activePrice && (
-                    <span className="text-xl text-gray-400 line-through">GH₵{product.compare_at_price.toFixed(2)}</span>
+                    <span className="text-lg text-gray-400 line-through tabular-nums">GH₵{product.compare_at_price.toFixed(2)}</span>
+                  )}
+                  {discount > 0 && (
+                    <span className="text-xs font-semibold uppercase tracking-wide text-red-700 bg-red-50 px-2 py-1 rounded-full">Save {discount}%</span>
                   )}
                 </div>
 
-                <p className="text-gray-700 leading-relaxed mb-8 text-lg">{product.description}</p>
+                {String(product.description || '').trim() && (
+                  <p className="text-gray-600 leading-relaxed mb-8 text-[15px] text-pretty line-clamp-3">{product.description}</p>
+                )}
 
                 {/* ── VARIANT SELECTORS ─────────────────────────────── */}
                 {hasVariants && (
@@ -614,95 +622,91 @@ export default function ProductDetailClient({ slug }: { slug: string }) {
                 )}
                 {/* ── END VARIANT SELECTORS ─────────────────────────── */}
 
-                <div className="mb-8">
-                  <label className="block font-semibold text-gray-900 mb-3">Quantity</label>
-                  <div className="flex items-center space-x-4">
-                    <div className="flex items-center border-2 border-gray-300 rounded-lg">
+                <div className="mb-6">
+                  <div className="flex items-center justify-between mb-2.5">
+                    <label className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-500">Quantity</label>
+                    {activeStock > 0 ? (
+                      <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700">
+                        <i className="ri-checkbox-circle-fill"></i>
+                        In stock
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-xs font-medium text-red-600">
+                        <i className="ri-close-circle-fill"></i>
+                        Out of stock
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <div className="inline-flex items-center border border-gray-200 rounded-full">
                       <button
                         onClick={() => setQuantity(Math.max(product.moq || 1, quantity - 1))}
-                        className="w-12 h-12 flex items-center justify-center text-gray-700 hover:bg-gray-50 transition-colors cursor-pointer"
+                        className="w-11 h-11 flex items-center justify-center text-gray-700 hover:bg-gray-50 rounded-full transition-colors cursor-pointer disabled:opacity-30"
                         disabled={activeStock === 0 || quantity <= (product.moq || 1)}
+                        aria-label="Decrease quantity"
                       >
-                        <i className="ri-subtract-line text-xl"></i>
+                        <i className="ri-subtract-line text-lg"></i>
                       </button>
                       <input
                         type="number"
                         value={quantity}
                         onChange={(e) => setQuantity(Math.max(product.moq || 1, Math.min(activeStock, parseInt(e.target.value) || (product.moq || 1))))}
-                        className="w-16 h-12 text-center border-x-2 border-gray-300 focus:outline-none text-lg font-semibold"
+                        className="w-10 h-11 text-center focus:outline-none text-base font-semibold tabular-nums bg-transparent"
                         min={product.moq || 1}
                         max={activeStock}
                         disabled={activeStock === 0}
                       />
                       <button
                         onClick={() => setQuantity(Math.min(activeStock, quantity + 1))}
-                        className="w-12 h-12 flex items-center justify-center text-gray-700 hover:bg-gray-50 transition-colors cursor-pointer"
+                        className="w-11 h-11 flex items-center justify-center text-gray-700 hover:bg-gray-50 rounded-full transition-colors cursor-pointer disabled:opacity-30"
                         disabled={activeStock === 0}
+                        aria-label="Increase quantity"
                       >
-                        <i className="ri-add-line text-xl"></i>
+                        <i className="ri-add-line text-lg"></i>
                       </button>
                     </div>
-                    <div className="flex flex-col">
-                      {product.moq > 1 && (
-                        <span className="text-gray-900 font-medium text-sm">
-                          <i className="ri-information-line mr-1"></i>
-                          Min. order: {product.moq} units
-                        </span>
-                      )}
-                      {activeStock > 0 ? (
-                        <span className="text-green-600 font-medium text-sm">
-                          <i className="ri-checkbox-circle-line mr-1"></i>
-                          In Stock
-                        </span>
-                      ) : (
-                        <span className="text-red-600 font-medium">
-                          <i className="ri-close-circle-line mr-1"></i>
-                          Out of Stock
-                        </span>
-                      )}
-                    </div>
+                    {product.moq > 1 && (
+                      <span className="text-sm text-gray-500">Minimum {product.moq}</span>
+                    )}
                   </div>
                 </div>
 
-                <div className="flex flex-col sm:flex-row gap-4 mb-8">
+                <div className="flex flex-col sm:flex-row gap-3 mb-8">
                   <button
                     disabled={activeStock === 0 || needsVariantSelection || needsColorSelection || !hasValidPrice}
-                    className={`flex-1 bg-gray-900 hover:bg-gray-900 text-white py-4 rounded-lg font-semibold transition-colors flex items-center justify-center space-x-2 text-lg whitespace-nowrap cursor-pointer ${(activeStock === 0 || needsVariantSelection || needsColorSelection || !hasValidPrice) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    className={`flex-1 bg-gray-950 hover:bg-black text-white py-3.5 rounded-full font-semibold transition-colors flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer active:scale-[0.98] ${(activeStock === 0 || needsVariantSelection || needsColorSelection || !hasValidPrice) ? 'opacity-40 cursor-not-allowed' : ''}`}
                     onClick={handleAddToCart}
                   >
-                    <i className="ri-shopping-cart-line text-xl"></i>
+                    <i className="ri-shopping-cart-line text-lg"></i>
                     <span>{activeStock === 0 ? 'Out of Stock' : needsColorSelection ? 'Select a Color' : needsVariantSelection ? 'Select a Variant' : !hasValidPrice ? 'Unavailable' : 'Add to Cart'}</span>
                   </button>
                   {activeStock > 0 && !needsVariantSelection && !needsColorSelection && hasValidPrice && (
                     <button
                       onClick={handleBuyNow}
-                      className="sm:w-auto bg-gray-900 hover:bg-gray-800 text-white px-8 py-4 rounded-lg font-semibold transition-colors whitespace-nowrap cursor-pointer"
+                      className="sm:w-auto border border-gray-950 bg-white hover:bg-gray-50 text-gray-950 px-8 py-3.5 rounded-full font-semibold transition-colors whitespace-nowrap cursor-pointer active:scale-[0.98]"
                     >
                       Buy Now
                     </button>
                   )}
                 </div>
 
-                <div className="border-t border-gray-200 pt-6 space-y-4">
-                  <div className="flex items-center text-gray-700">
-                    <i className="ri-store-2-line text-xl text-gray-900 mr-3"></i>
-                    <span>Free store pickup available</span>
+                <div className="grid sm:grid-cols-3 gap-3 border-t border-gray-100 pt-5">
+                  <div className="flex items-start gap-2.5 text-sm text-gray-600">
+                    <i className="ri-store-2-line text-base text-gray-900 mt-0.5"></i>
+                    <span className="text-pretty">Free store pickup</span>
                   </div>
-                  <div className="flex items-center text-gray-700">
-                    <i className="ri-arrow-left-right-line text-xl text-gray-900 mr-3"></i>
-                    <span>Delivers in 24 - 48 hours</span>
+                  <div className="flex items-start gap-2.5 text-sm text-gray-600">
+                    <i className="ri-truck-line text-base text-gray-900 mt-0.5"></i>
+                    <span className="text-pretty">Delivery in 24–48 hours</span>
                   </div>
-                  <div className="flex items-center text-gray-700">
-                    <i className="ri-shield-check-line text-xl text-gray-900 mr-3"></i>
-                    <span>Secure payment & buyer protection</span>
+                  <div className="flex items-start gap-2.5 text-sm text-gray-600">
+                    <i className="ri-shield-check-line text-base text-gray-900 mt-0.5"></i>
+                    <span className="text-pretty">Secure payment</span>
                   </div>
-                  {product.sku && (
-                    <div className="flex items-center text-gray-700">
-                      <i className="ri-barcode-line text-xl text-gray-900 mr-3"></i>
-                      <span>SKU: {product.sku}</span>
-                    </div>
-                  )}
                 </div>
+                {product.sku && (
+                  <p className="mt-4 text-[11px] uppercase tracking-[0.16em] text-gray-400">SKU {product.sku}</p>
+                )}
               </div>
             </div>
           </div>

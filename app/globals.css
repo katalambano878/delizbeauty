@@ -384,11 +384,6 @@ img {
     padding-top: env(safe-area-inset-top, 0px);
   }
 
-  /* Ensure bottom nav has safe area */
-  nav[aria-label="Mobile navigation"] {
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-  }
-
   /* Add bottom padding to main content for bottom nav */
   main {
     padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px));
