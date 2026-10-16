@@ -1,3 +1,4 @@
+import { randomBytes } from 'crypto';
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 
@@ -101,7 +102,10 @@ export async function POST(request: Request) {
         payment_method: payment_method || 'cash',
         shipping_address: shipping_address || {},
         billing_address: billing_address || {},
-        metadata: metadata || {},
+        metadata: {
+          ...(metadata || {}),
+          receipt_token: randomBytes(16).toString('hex'),
+        },
       })
       .select()
       .single();

@@ -241,6 +241,9 @@ export async function sendOrderConfirmation(order: any) {
     // Get tracking number from metadata
     const trackingNumber = metadata?.tracking_number || '';
     const trackingUrl = `${baseUrl}/order-tracking?order=${order_number || id}`;
+    const receiptUrl = metadata?.receipt_token
+        ? `${baseUrl}/receipt/${metadata.receipt_token}`
+        : '';
 
     console.log(`[Notification] Preparing for Order #${order_number} | Phone: ${phone ? 'Present' : 'Missing'} | Tracking: ${trackingNumber || 'None'}`);
 
@@ -340,7 +343,9 @@ ${emailButton('View Order in Admin', `${baseUrl}/admin/orders/${id}`)}
 
     // 4. SMS to Customer (if phone exists)
     if (phone) {
-        const smsMessage = trackingNumber
+        const smsMessage = receiptUrl
+            ? `Hi ${name}, your Deliz order #${order_number || id} is confirmed. Total GH₵${Number(total).toFixed(2)}. View your receipt: ${receiptUrl}`
+            : trackingNumber
             ? `Hi ${name}, your order #${order_number || id} is confirmed! Tracking: ${trackingNumber}. Track here: ${trackingUrl}${shippingNotesSms}`
             : `Hi ${name}, your order #${order_number || id} at Deliz Beauty Tools is confirmed! Track here: ${trackingUrl}${shippingNotesSms}`;
         
