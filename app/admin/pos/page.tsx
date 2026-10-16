@@ -705,6 +705,31 @@ export default function POSPage() {
                 }
             }
 
+            const notifyCustomer = (type: 'order_created' | 'payment_link', savedOrder: any) => {
+                const realEmail = hasRealEmail && /\S+@\S+\.\S+/.test(customerEmail) ? customerEmail : '';
+                if (!customerPhone && !realEmail) return;
+                supabase.auth.getSession().then(({ data: { session } }) => {
+                    fetch('/api/notifications', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            ...(session?.access_token && { Authorization: `Bearer ${session.access_token}` }),
+                        },
+                        body: JSON.stringify({
+                            type,
+                            payload: {
+                                ...savedOrder,
+                                order_number: orderNumber,
+                                email: realEmail,
+                                phone: customerPhone,
+                                total: grandTotal,
+                                shipping_address: addressData,
+                            },
+                        }),
+                    }).catch(() => {});
+                }).catch(() => {});
+            };
+
             if (isCashOrCard) {
                 const receiptData = {
                     orderNumber, items: cart, subtotal: cartSubtotal,
@@ -722,20 +747,7 @@ export default function POSPage() {
                 playSound('success');
                 fetchDailySummary();
 
-                if (customerEmail && customerEmail !== 'pos-walkin@store.local') {
-                    const { data: { session } } = await supabase.auth.getSession();
-                    fetch('/api/notifications', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            ...(session?.access_token && { 'Authorization': `Bearer ${session.access_token}` })
-                        },
-                        body: JSON.stringify({
-                            type: 'order_created',
-                            payload: { ...order, order_number: orderNumber, email: customerEmail, shipping_address: addressData }
-                        })
-                    }).catch(() => {});
-                }
+                notifyCustomer('order_created', order);
             }
 
             if (paymentMethod === 'momo') {
@@ -764,6 +776,7 @@ export default function POSPage() {
                 setOrderDiscount(0);
                 playSound('success');
                 fetchDailySummary();
+                notifyCustomer('payment_link', order);
             }
         } catch (error: any) {
             console.error('Checkout failed:', error);

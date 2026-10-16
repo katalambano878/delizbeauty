@@ -522,7 +522,7 @@ export async function sendPaymentLink(order: any) {
     console.log(`[Notification] Sending payment link for Order #${order_number} | Phone: ${phone ? 'Present' : 'Missing'}`);
 
     // Email with payment link
-    await sendEmail({
+    if (email && /\S+@\S+\.\S+/.test(email)) await sendEmail({
         to: email,
         subject: `Complete Your Order #${order_number}`,
         html: emailLayout(`
