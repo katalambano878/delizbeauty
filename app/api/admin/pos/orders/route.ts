@@ -79,7 +79,7 @@ export async function POST(request: Request) {
 
     const paidNow = Boolean(mark_paid) && (payment_status === 'paid' || payment_method === 'cash' || payment_method === 'card');
     const orderStatus = paidNow
-      ? (shipping_method === 'delivery' ? 'processing' : 'delivered')
+      ? (shipping_method === 'doorstep' || shipping_method === 'delivery' ? 'processing' : 'delivered')
       : (status === 'pending' || status === 'awaiting_payment' ? status : 'pending');
 
     const { data: order, error: orderError } = await supabaseAdmin
