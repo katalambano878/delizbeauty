@@ -77,6 +77,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing order_number, total, or items' }, { status: 400 });
     }
 
+    const paidNow = Boolean(mark_paid) && (payment_status === 'paid' || payment_method === 'cash' || payment_method === 'card');
+    const orderStatus = paidNow
+      ? (shipping_method === 'delivery' ? 'processing' : 'delivered')
+      : (status === 'pending' || status === 'awaiting_payment' ? status : 'pending');
+
     const { data: order, error: orderError } = await supabaseAdmin
       .from('orders')
       .insert({
@@ -84,7 +89,7 @@ export async function POST(request: Request) {
         user_id: null,
         email: email || null,
         phone: phone || null,
-        status: status || 'pending',
+        status: orderStatus,
         payment_status: payment_status || 'pending',
         currency: 'GHS',
         subtotal: Number(subtotal) || 0,
@@ -123,17 +128,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: itemsError.message }, { status: 500 });
     }
 
-    if (mark_paid && (payment_status === 'paid' || payment_method === 'cash' || payment_method === 'card')) {
+    if (paidNow) {
       try {
         await supabaseAdmin.rpc('mark_order_paid', {
           order_ref: order_number,
           moolre_ref: `POS-${(payment_method || 'cash').toUpperCase()}-${Date.now()}`,
         });
-        // POS sales are fulfilled immediately — mark as completed
-        await supabaseAdmin
-          .from('orders')
-          .update({ status: 'completed' })
-          .eq('order_number', order_number);
       } catch (e) {
         console.error('mark_order_paid error:', e);
       }

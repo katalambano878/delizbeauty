@@ -658,7 +658,7 @@ export default function POSPage() {
                     order_number: orderNumber,
                     email: customerEmail,
                     phone: customerPhone,
-                    status: isCashOrCard ? 'completed' : 'pending',
+                    status: isCashOrCard ? (deliveryMethod === 'delivery' ? 'processing' : 'delivered') : 'pending',
                     payment_status: isCashOrCard ? 'paid' : 'pending',
                     subtotal: cartSubtotal,
                     discount_total: totalDiscount,
