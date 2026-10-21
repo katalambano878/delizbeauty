@@ -4,21 +4,21 @@ export default function ShippingPage() {
   const deliveryOptions = [
     {
       type: 'Standard Delivery',
-      time: '2-5 Business Days',
+      time: 'Same day delivery',
       cost: 'GHS 20',
-      description: 'Perfect for regular orders with no rush',
+      description: 'Delivered the same day across Ghana',
       icon: 'ri-truck-line'
     },
     {
       type: 'Express Delivery',
-      time: 'Next Day',
+      time: 'Same day delivery',
       cost: 'GHS 40',
-      description: 'Available for Accra & Kumasi orders placed before 2pm',
+      description: 'Same day delivery for Accra and Kumasi',
       icon: 'ri-rocket-line'
     },
     {
       type: 'Store Pickup',
-      time: 'Same Day',
+      time: 'Same day',
       cost: 'FREE',
       description: 'Collect from our East Legon store',
       icon: 'ri-store-2-line'
@@ -29,26 +29,26 @@ export default function ShippingPage() {
     {
       zone: 'Zone 1 - Accra Metro',
       areas: 'East Legon, Osu, Labone, Airport, Dzorwulu, Cantonments, Adabraka, Tema',
-      standard: '1-2 days',
-      express: 'Next day'
+      standard: 'Same day delivery',
+      express: 'Same day delivery'
     },
     {
       zone: 'Zone 2 - Greater Accra',
       areas: 'Madina, Legon, Haatso, Achimota, Dansoman, Spintex, Teshie, Kasoa',
-      standard: '2-3 days',
-      express: 'Next day'
+      standard: 'Same day delivery',
+      express: 'Same day delivery'
     },
     {
       zone: 'Zone 3 - Major Cities',
       areas: 'Kumasi, Takoradi, Cape Coast, Tamale, Sunyani, Ho, Koforidua',
-      standard: '3-4 days',
-      express: '1-2 days'
+      standard: 'Same day delivery',
+      express: 'Same day delivery'
     },
     {
       zone: 'Zone 4 - Other Areas',
       areas: 'All other locations within Ghana',
-      standard: '4-5 days',
-      express: 'Not available'
+      standard: 'Same day delivery',
+      express: 'Same day delivery'
     }
   ];
 
@@ -132,7 +132,7 @@ export default function ShippingPage() {
                 <div>
                   <h3 className="font-bold text-gray-900 mb-2">Order Processing</h3>
                   <p className="text-gray-600 leading-relaxed">
-                    Orders placed before 2pm are processed same day. We carefully pack your items and prepare them for dispatch.
+                    Orders are prepared for same day delivery. We carefully pack your items and prepare them for dispatch.
                   </p>
                 </div>
               </div>
@@ -184,17 +184,17 @@ export default function ShippingPage() {
                   Cut-off Times
                 </h3>
                 <p className="text-gray-600 leading-relaxed text-sm">
-                  Orders placed before 2pm are dispatched same day. Orders after 2pm are dispatched next business day.
+                  Orders are dispatched for same day delivery.
                 </p>
               </div>
 
               <div>
                 <h3 className="font-bold text-gray-900 mb-2 flex items-center gap-2">
                   <i className="ri-calendar-line text-gray-900"></i>
-                  Business Days
+                  Delivery time
                 </h3>
                 <p className="text-gray-600 leading-relaxed text-sm">
-                  Delivery timeframes exclude weekends and public holidays. We process orders Monday to Friday.
+                  We offer same day delivery.
                 </p>
               </div>
 

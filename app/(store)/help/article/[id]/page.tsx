@@ -84,7 +84,7 @@ const articles: any = {
       
       <h2>Delivery &amp; Support</h2>
       <ul>
-        <li>Delivers within 24 - 48 hours nationwide</li>
+        <li>Same day delivery nationwide</li>
         <li>Pickup available at our Madina, Ritz Junction shop</li>
         <li>Contact us for any issues with your order</li>
         <li>Exchange or replacement for defective items</li>

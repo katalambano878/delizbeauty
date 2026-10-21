@@ -280,7 +280,7 @@ function OrderTrackingContent() {
                   <span className="font-mono bg-gray-100 px-2 py-0.5 rounded text-sm">{trackingNumber}</span>
                 </p>
               )}
-              <p className="text-gray-500 text-sm mt-1">Estimated delivery: same day &ndash; next day</p>
+              <p className="text-gray-500 text-sm mt-1">Estimated delivery: same day delivery</p>
             </div>
             <div className={`px-4 py-2 rounded-full font-semibold whitespace-nowrap ${statusBadge.color}`}>
               {statusBadge.label}

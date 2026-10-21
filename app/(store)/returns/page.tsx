@@ -150,7 +150,7 @@ export default function ReturnsPortalPage() {
                   <div className="text-sm text-blue-700">
                     <p className="font-semibold mb-1">Delivery &amp; Returns</p>
                     <ul className="space-y-1">
-                      <li>• Delivers within 24 - 48 hours nationwide</li>
+                      <li>• Same day delivery nationwide</li>
                       <li>• Pickup available at our Madina, Ritz Junction shop</li>
                       <li>• Contact us for any issues with your order</li>
                       <li>• Exchange or replacement for defective items</li>

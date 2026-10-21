@@ -164,8 +164,7 @@ function OrderSuccessContent() {
                 </div>
                 <div>
                   <p className="text-sm text-gray-600 mb-1">Estimated Delivery</p>
-                  <p className="text-lg font-bold text-gray-900">Same day &ndash; next day</p>
-                  <p className="text-xs text-gray-500 mt-1">Most orders ship the same day</p>
+                  <p className="text-lg font-bold text-gray-900">Same day delivery</p>
                 </div>
               </div>
             </div>

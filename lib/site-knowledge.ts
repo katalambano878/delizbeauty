@@ -54,26 +54,26 @@ You can also use the contact form on the website, or use this chat to create a s
     path: '/shipping',
     category: 'shipping',
     content: `Delivery Options:
-- Standard Delivery: 2-5 Business Days, GH₵20
-- Express Delivery: Next Day, GH₵40 (Available in Accra & Kumasi only)
-- Store Pickup: Same Day, FREE — Order online and pick up at our Accra location
+- Standard Delivery: Same day delivery, GH₵20
+- Express Delivery: Same day delivery, GH₵40 (Available in Accra & Kumasi only)
+- Store Pickup: Same day, FREE — Order online and pick up at our Accra location
 
 Free Shipping: On all orders over GH₵300!
 
 Delivery Zones:
-- Zone 1 (Accra Metro): 1-2 days standard, next day express
-- Zone 2 (Greater Accra): 2-3 days standard, next day express
-- Zone 3 (Major Cities like Kumasi, Takoradi, Tamale, Cape Coast): 3-4 days standard, 1-2 days express
-- Zone 4 (Other Areas): 4-5 days standard, express not available
+- Zone 1 (Accra Metro): Same day delivery
+- Zone 2 (Greater Accra): Same day delivery
+- Zone 3 (Major Cities like Kumasi, Takoradi, Tamale, Cape Coast): Same day delivery
+- Zone 4 (Other Areas): Same day delivery
 
 How Delivery Works:
-1. Order Processing — We prepare your order (same day if ordered before 2pm)
+1. Order Processing — We prepare your order for same day delivery
 2. Dispatch — Your package is handed to our delivery partner
 3. Track — You get a tracking number via SMS/email
-4. Delivery — Package arrives at your doorstep
+4. Delivery — Package arrives at your doorstep the same day
 
 Important Details:
-- Cut-off time: Orders placed before 2pm are processed same day
+- Delivery time: Same day delivery
 - Business days: Monday to Friday
 - We will contact you before delivery
 - Failed deliveries: We attempt delivery twice. After 2 failed attempts, package returns to our warehouse
@@ -231,7 +231,7 @@ Q: What if I received the wrong item?
 A: Contact us immediately! You can initiate a return through the Returns page or create a support ticket. We'll arrange a free return and send the correct item.
 
 Q: How long does delivery take?
-A: Accra Metro: 1-2 days, Greater Accra: 2-3 days, Major Cities: 3-4 days, Other Areas: 4-5 days. Express delivery (next day) available in Accra and Kumasi for GH₵40.`,
+A: Same day delivery across Ghana. Express same day delivery is available in Accra and Kumasi for GH₵40.`,
     keywords: ['faq', 'order', 'place order', 'cancel', 'modify', 'track', 'wrong item', 'how long'],
   },
   {
@@ -242,10 +242,10 @@ A: Accra Metro: 1-2 days, Greater Accra: 2-3 days, Major Cities: 3-4 days, Other
     content: `Frequently Asked Questions — Shipping:
 
 Q: What are the delivery costs?
-A: Standard: GH₵20 (2-5 days), Express: GH₵40 (next day, Accra & Kumasi only), Store Pickup: FREE. Orders over GH₵300 get free shipping!
+A: Standard: GH₵20 (same day delivery), Express: GH₵40 (same day delivery, Accra & Kumasi only), Store Pickup: FREE. Orders over GH₵300 get free shipping!
 
 Q: Do you deliver nationwide?
-A: Yes! We deliver across all of Ghana. Delivery times vary by zone — Accra is fastest (1-2 days), other areas up to 4-5 days.
+A: Yes! We deliver across all of Ghana with same day delivery.
 
 Q: Do you ship internationally?
 A: Currently we only deliver within Ghana. International shipping is not yet available.

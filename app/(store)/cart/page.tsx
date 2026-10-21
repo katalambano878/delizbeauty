@@ -260,7 +260,7 @@ export default function CartPage() {
                       </div>
                       <div className="flex items-center text-sm text-gray-600">
                         <i className="ri-truck-line text-gray-900 mr-2"></i>
-                        <span>Delivers in 24 - 48 hours</span>
+                        <span>Same day delivery</span>
                       </div>
                       <div className="flex items-center text-sm text-gray-600">
                         <i className="ri-customer-service-line text-gray-900 mr-2"></i>

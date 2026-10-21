@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
         regions: regions || [],
         base_fee: base_fee || 0,
         express_fee: express_fee || 0,
-        estimated_days: estimated_days || '1-3 days',
+        estimated_days: estimated_days || 'Same day delivery',
         is_active: true,
     }).select().single();
 

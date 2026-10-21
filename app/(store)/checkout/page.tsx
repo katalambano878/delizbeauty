@@ -689,7 +689,7 @@ export default function CheckoutPage() {
                         />
                         <div>
                           <p className="font-semibold text-gray-900">Store Pickup</p>
-                          <p className="text-sm text-gray-600">Pick up from our store — Ready in 24 hours</p>
+                          <p className="text-sm text-gray-600">Pick up from our store — Same day</p>
                         </div>
                       </div>
                       <p className="font-bold text-gray-900">FREE</p>
@@ -708,7 +708,7 @@ export default function CheckoutPage() {
                         />
                         <div>
                           <p className="font-semibold text-gray-900">Doorstep Delivery</p>
-                          <p className="text-sm text-gray-600">We will contact you with the delivery cost</p>
+                          <p className="text-sm text-gray-600">Same day delivery. We will contact you with the delivery cost</p>
                         </div>
                       </div>
                       <p className="font-semibold text-amber-600 text-sm">At a Cost</p>

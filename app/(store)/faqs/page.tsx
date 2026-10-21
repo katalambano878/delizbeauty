@@ -40,7 +40,7 @@ export default function FAQsPage() {
     {
       category: 'shipping',
       question: 'What are your delivery times?',
-      answer: 'Standard delivery takes 2-5 business days within Ghana. Express delivery (next-day) is available for Accra and Kumasi. Orders placed before 2pm are dispatched same day. Remote areas may take 5-7 business days.'
+      answer: 'We offer same day delivery across Ghana. You can also pick up your order the same day at our shop in Madina, Ritz Junction, Accra.'
     },
     {
       category: 'shipping',
@@ -60,7 +60,7 @@ export default function FAQsPage() {
     {
       category: 'returns',
       question: 'How fast is delivery?',
-      answer: 'We deliver within 24 - 48 hours across Ghana. Orders placed before 3 PM are typically dispatched the same day. You can also choose to pick up your order at our shop in Madina, Ritz Junction, Accra.'
+      answer: 'We offer same day delivery across Ghana. You can also pick up your order the same day at our shop in Madina, Ritz Junction, Accra.'
     },
     {
       category: 'returns',
@@ -264,7 +264,7 @@ export default function FAQsPage() {
             </div>
             <h3 className="text-xl font-bold text-gray-900 mb-2">Delivery Info</h3>
             <p className="text-gray-600 leading-relaxed">
-              We deliver nationwide in 24 - 48 hours. Pickup also available.
+              Same day delivery nationwide. Pickup also available.
             </p>
           </Link>
 

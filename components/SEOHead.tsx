@@ -17,7 +17,7 @@ interface SEOProps {
 
 export function generateMetadata({
   title = 'Premium Online Shopping in Ghana',
-  description = 'Discover curated premium beauty products with fast delivery across Ghana. Shop lash, hair, nail, spa & skincare with secure payment. Delivers in 24-48 hours.',
+  description = 'Discover curated premium beauty products with fast delivery across Ghana. Shop lash, hair, nail, spa & skincare with secure payment. Same day delivery.',
   keywords = [],
   ogImage = 'https://readdy.ai/api/search-image?query=modern%20premium%20ecommerce%20online%20shopping%20platform%20elegant%20design&width=1200&height=630&seq=ogimage&orientation=landscape',
   ogType = 'website',

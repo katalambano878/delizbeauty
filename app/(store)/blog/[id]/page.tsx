@@ -49,7 +49,7 @@ export default async function BlogPostPage({ params }: { params: Promise<{ id: s
         <p>Always ensure you're on a secure connection when entering payment details. Avoid using public Wi-Fi for transactions.</p>
 
         <h2>Understanding Delivery Options</h2>
-        <p>Delivery times and costs vary by location. In Accra and major cities, you can often get next-day delivery. Remote areas may take longer. Always check:</p>
+        <p>We offer same day delivery. Always check:</p>
         <ul>
           <li>Estimated delivery time for your location</li>
           <li>Delivery costs (many stores offer free shipping above a certain amount)</li>

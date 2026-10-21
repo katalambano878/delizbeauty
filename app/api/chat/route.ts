@@ -343,7 +343,7 @@ WHEN CREATING SUPPORT TICKETS:
 - Always include a clear subject and description based on the full conversation context.
 
 STORE POLICIES (quick reference):
-- Delivery: 1-3 days Accra, 3-7 days rest of Ghana
+- Delivery: Same day delivery across Ghana
 - Returns: Within 30 days of delivery, unused items in original packaging
 - Payment: Mobile Money (MTN, Vodafone, AirtelTigo), Cash on Delivery (Accra only)
 - Support hours: Mon-Sat, 8 AM - 8 PM GMT
@@ -372,8 +372,8 @@ You can help customers place orders directly in this chat. Here is how:
    - Phone number
    - Delivery address, city, and region
 3. Ask them to choose a delivery method:
-   - **Standard** — GH₵20 (1-3 business days in Accra, 3-7 days outside)
-   - **Express** — GH₵40 (same-day/next-day in Accra)
+   - **Standard** — GH₵20 (same day delivery)
+   - **Express** — GH₵40 (same day delivery in Accra)
    - **Pickup** — Free (collect from our location)
 4. Ask them to choose a payment method:
    - **Mobile Money** (MTN, Vodafone, AirtelTigo via Moolre) — default

@@ -129,7 +129,7 @@ export default function ContactPage() {
   const faqs = [
     {
       question: 'What are your delivery times?',
-      answer: 'Standard delivery takes 2-5 business days. Express delivery is available for next-day service in major cities.'
+      answer: 'We offer same day delivery across Ghana.'
     },
     {
       question: 'Do you offer international shipping?',

@@ -332,12 +332,12 @@ export async function getRecommendations(
 // ─── 9. Get Store Info (static) ─────────────────────────────────────────────
 
 const STORE_INFO: Record<string, string> = {
-  shipping: `We deliver across Ghana. Standard delivery takes 1-3 business days within Accra and 3-7 business days outside Accra. Shipping fees vary by location and are calculated at checkout.`,
+  shipping: `We deliver across Ghana with same day delivery. Shipping fees vary by location and are calculated at checkout.`,
   returns: `We accept returns within 30 days of delivery for unused items in original packaging. To start a return, go to your account or ask me to help. Refunds are processed within 5-7 business days after we receive the item.`,
   payment: `We accept Mobile Money (MTN, Vodafone Cash, AirtelTigo Money) via our secure Moolre payment gateway. Cash on delivery is available for orders within Accra.`,
   contact: `You can reach us through:\n- This chat (24/7)\n- Email: contact@delizbeautytools.com\n- Phone: 027 854 9831\n- Visit: Madina, Ritz Junction, Accra\n- Support ticket: I can create one for you right now`,
   about: `Deliz Beauty Tools is Ghana's trusted destination for premium beauty essentials. We specialize in lash products, hair and wig tools, pedicure and manicure supplies, nail accessories, spa equipment, and skincare. Located in Madina, Ritz Junction, Accra. Nationwide delivery.`,
-  delivery_times: `Accra: 1-3 business days\nKumasi, Takoradi, Cape Coast: 3-5 business days\nOther regions: 5-7 business days\nExpress delivery available for Accra (same day/next day) at extra cost.`,
+  delivery_times: `Same day delivery across Ghana.`,
   hours: `Our online store is open 24/7. Customer support is available Monday-Saturday, 8 AM - 8 PM GMT.`,
 };
 

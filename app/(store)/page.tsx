@@ -99,7 +99,7 @@ export default function Home() {
 
   const features = [
     { icon: 'ri-store-2-line', title: 'Free Store Pickup', desc: 'Pick up at our store' },
-    { icon: 'ri-truck-line', title: 'Fast Delivery', desc: 'Delivers in 24 - 48 hours' },
+    { icon: 'ri-truck-line', title: 'Fast Delivery', desc: 'Same day delivery' },
     { icon: 'ri-customer-service-2-line', title: '24/7 Support', desc: 'Dedicated service' },
     { icon: 'ri-shield-check-line', title: 'Secure Payment', desc: 'Safe checkout' },
   ];

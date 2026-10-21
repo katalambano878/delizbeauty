@@ -22,7 +22,7 @@ export default function ZonesPage() {
     const [editingZone, setEditingZone] = useState<Zone | null>(null);
     const [form, setForm] = useState({
         name: '', description: '', regions: [] as string[],
-        base_fee: '', express_fee: '', estimated_days: '1-3 days',
+        base_fee: '', express_fee: '', estimated_days: 'Same day delivery',
     });
     const [saving, setSaving] = useState(false);
     const [toast, setToast] = useState('');
@@ -45,7 +45,7 @@ export default function ZonesPage() {
 
     function openAddModal() {
         setEditingZone(null);
-        setForm({ name: '', description: '', regions: [], base_fee: '', express_fee: '', estimated_days: '1-3 days' });
+        setForm({ name: '', description: '', regions: [], base_fee: '', express_fee: '', estimated_days: 'Same day delivery' });
         setShowModal(true);
     }
 
@@ -54,7 +54,7 @@ export default function ZonesPage() {
         setForm({
             name: zone.name, description: zone.description || '',
             regions: zone.regions || [], base_fee: String(zone.base_fee),
-            express_fee: String(zone.express_fee), estimated_days: zone.estimated_days,
+            estimated_days: 'Same day delivery',
         });
         setShowModal(true);
     }
@@ -191,7 +191,7 @@ export default function ZonesPage() {
 
                             <div className="flex items-center gap-2 mb-3 text-sm text-gray-600">
                                 <i className="ri-time-line text-gray-400" />
-                                <span>{zone.estimated_days}</span>
+                                <span>Same day delivery</span>
                             </div>
 
                             {zone.regions && zone.regions.length > 0 && (
@@ -270,13 +270,7 @@ export default function ZonesPage() {
                                 <label className="block text-sm font-semibold text-gray-900 mb-1.5">Estimated Delivery Time</label>
                                 <select value={form.estimated_days} onChange={e => setForm(f => ({ ...f, estimated_days: e.target.value }))}
                                     className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-gray-600">
-                                    <option value="Same day">Same day</option>
-                                    <option value="Next day">Next day</option>
-                                    <option value="1-2 days">1-2 days</option>
-                                    <option value="1-3 days">1-3 days</option>
-                                    <option value="2-5 days">2-5 days</option>
-                                    <option value="3-7 days">3-7 days</option>
-                                    <option value="5-10 days">5-10 days</option>
+                                    <option value="Same day delivery">Same day delivery</option>
                                 </select>
                             </div>
 

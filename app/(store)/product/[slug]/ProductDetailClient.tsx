@@ -699,7 +699,7 @@ export default function ProductDetailClient({ slug }: { slug: string }) {
                   </div>
                   <div className="flex items-start gap-2.5 text-sm text-gray-600">
                     <i className="ri-truck-line text-base text-gray-900 mt-0.5"></i>
-                    <span className="text-pretty">Delivery in 24–48 hours</span>
+                    <span className="text-pretty">Same day delivery</span>
                   </div>
                   <div className="flex items-start gap-2.5 text-sm text-gray-600">
                     <i className="ri-shield-check-line text-base text-gray-900 mt-0.5"></i>
