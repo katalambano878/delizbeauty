@@ -54,7 +54,7 @@ export default function ZonesPage() {
         setForm({
             name: zone.name, description: zone.description || '',
             regions: zone.regions || [], base_fee: String(zone.base_fee),
-            estimated_days: 'Same day delivery',
+            express_fee: String(zone.express_fee), estimated_days: 'Same day delivery',
         });
         setShowModal(true);
     }
