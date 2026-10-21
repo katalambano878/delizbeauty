@@ -44,8 +44,6 @@ export default function MaintenanceMode() {
             <div className="absolute top-[-20%] left-[-10%] w-[50vw] h-[50vw] bg-purple-600/20 blur-[150px] rounded-full pointer-events-none" />
             <div className="absolute bottom-[-20%] right-[-10%] w-[60vw] h-[60vw] bg-blue-600/10 blur-[150px] rounded-full pointer-events-none" />
             <div className="absolute top-[20%] right-[10%] w-[30vw] h-[30vw] bg-rose-500/10 blur-[120px] rounded-full pointer-events-none" />
-            <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 pointer-events-none mix-blend-overlay" />
-
             {/* Content Container */}
             <div className="z-10 flex flex-col items-center text-center px-6 max-w-4xl mx-auto w-full">
                 {/* Logo or Icon */}
