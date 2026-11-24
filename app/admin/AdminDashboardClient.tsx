@@ -1,11 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import { useState, useEffect, type ReactNode } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
-export default function AdminDashboardClient({ smsCreditCard }: { smsCreditCard?: ReactNode }) {
+export default function AdminDashboardClient() {
   const [dateRange, setDateRange] = useState('7days'); // logic not implemented for this demo, just UI
   const [loading, setLoading] = useState(true);
 
@@ -259,7 +259,6 @@ export default function AdminDashboardClient({ smsCreditCard }: { smsCreditCard?
               <p className="text-gray-600 text-sm">{stat.title}</p>
             </div>
           ))}
-          {smsCreditCard}
         </div>
 
         {/* Revenue Chart & Quick Actions */}
