@@ -1,0 +1,44 @@
+name: Uptime check
+
+# Runs every 5 minutes from GitHub's infrastructure (NOT from the VPS).
+# If the live site or the self-hosted Supabase fails two probes in a row,
+# the admin team receives an SMS via the existing Moolre integration.
+#
+# Required repository secrets:
+#   MOOLRE_API_KEY        - Moolre VAS key (same one used by the app).
+#   ADMIN_SMS_RECIPIENTS  - Comma-separated phone numbers, e.g. "0278549831,0205771442".
+#   SMS_SENDER_ID         - Optional. Defaults to "DelizBeauty".
+
+on:
+  schedule:
+    # Every 5 minutes. GitHub Actions cron can drift a few minutes on free tier,
+    # which is fine for this purpose.
+    - cron: '*/5 * * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: uptime-check
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    name: Probe public endpoints
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Checkout (sparse — only the script)
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            scripts/uptime-check.mjs
+          sparse-checkout-cone-mode: false
+
+      - name: Run uptime probe
+        env:
+          MOOLRE_API_KEY: ${{ secrets.MOOLRE_API_KEY }}
+          ADMIN_SMS_RECIPIENTS: ${{ secrets.ADMIN_SMS_RECIPIENTS }}
+          SMS_SENDER_ID: ${{ secrets.SMS_SENDER_ID }}
+        run: node scripts/uptime-check.mjs
