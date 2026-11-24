@@ -1,0 +1,33 @@
+{
+  "hook": {
+    "enabled": true,
+    "limits": {
+      "maxFindings": 5,
+      "maxChars": 8000
+    }
+  },
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "gray-on-color",
+        "value": "*",
+        "files": [
+          "app/admin/layout.tsx"
+        ],
+        "createdAt": "2026-10-08T17:12:18.678Z",
+        "reason": "Pre-existing admin sidebar text (text-gray-700 over hover:bg-orange-50 at L529), untouched by this edit; the finding blocked an unrelated menu-item insertion."
+      },
+      {
+        "rule": "gray-on-color",
+        "value": "*",
+        "files": [
+          "app/admin/staff/page.tsx"
+        ],
+        "createdAt": "2026-10-08T17:12:28.904Z",
+        "reason": "Pre-existing admin staff page text (text-gray-600 over hover:bg-red-50), untouched by this edit; the finding blocked an unrelated permission change."
+      }
+    ]
+  }
+}
