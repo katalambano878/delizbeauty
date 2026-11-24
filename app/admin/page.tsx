@@ -1,5 +1,4 @@
 import AdminDashboardClient from './AdminDashboardClient';
-import { SmsCreditDashboardCard } from '@/components/admin/SmsCreditDashboardCard';
 import { getDashboardSmsCredit } from '@/lib/sms-credit-cache';
 
 export const dynamic = 'force-dynamic';
