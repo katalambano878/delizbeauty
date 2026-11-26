@@ -8,6 +8,8 @@ import {
   scoreCategoryMatch,
   tokenizeSearchQuery,
 } from '@/lib/product-search';
+import { priceProducts } from '@/lib/pricing';
+import { getStorePricing } from '@/lib/store-pricing';
 
 const PRODUCT_SELECT = `
   id,
@@ -15,6 +17,7 @@ const PRODUCT_SELECT = `
   slug,
   price,
   compare_at_price,
+  metadata,
   sku,
   brand,
   tags,
@@ -29,6 +32,7 @@ const PRODUCT_SELECT_CATEGORY_INNER = `
   slug,
   price,
   compare_at_price,
+  metadata,
   sku,
   brand,
   tags,
@@ -131,8 +135,7 @@ export async function GET(request: Request) {
       }
     }
 
-    const rankedProducts = ranked
-      .slice(0, limit)
+    const rankedProducts = priceProducts(ranked.slice(0, limit), await getStorePricing())
       .map((product) => {
         const images = Array.isArray(product.product_images)
           ? [...product.product_images].sort(

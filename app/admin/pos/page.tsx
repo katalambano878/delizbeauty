@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { parseStorePricing, resolveLinePrice } from '@/lib/pricing';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -10,6 +11,8 @@ interface Product {
     id: string;
     name: string;
     price: number;
+    /** The stored price, shown crossed out when a sale or discount lowers `price`. */
+    regularPrice?: number;
     quantity: number;
     category: string;
     image: string;
@@ -348,17 +351,24 @@ export default function POSPage() {
     const fetchData = async () => {
         try {
             setLoading(true);
-            const { data: prodData } = await supabase
-                .from('products')
-                .select(`id, name, price, quantity, sku, metadata, categories(name), product_images(url)`)
-                .eq('status', 'active')
-                .order('name');
+            // The till charges what the online shop charges: the running sale or
+            // product discount is applied to every price here.
+            const [{ data: prodData }, { data: pricingRow }] = await Promise.all([
+                supabase
+                    .from('products')
+                    .select(`id, name, price, compare_at_price, quantity, sku, metadata, categories(name), product_images(url)`)
+                    .eq('status', 'active')
+                    .order('name'),
+                supabase.from('site_settings').select('value').eq('key', 'store_pricing').maybeSingle(),
+            ]);
+            const pricing = parseStorePricing(pricingRow?.value);
 
             if (prodData) {
                 const formatted: Product[] = prodData.map((p: any) => ({
                     id: p.id,
                     name: p.name,
-                    price: p.price,
+                    price: resolveLinePrice(p, null, pricing),
+                    regularPrice: Number(p.price) || 0,
                     quantity: p.quantity,
                     category: p.categories?.name || 'Uncategorized',
                     image: p.product_images?.[0]?.url || '',
@@ -978,7 +988,12 @@ export default function POSPage() {
                                         <div className="p-2.5 flex flex-col flex-1">
                                             <h3 className="text-xs font-semibold text-gray-900 line-clamp-2 mb-auto">{product.name}</h3>
                                             <div className="flex items-center justify-between mt-1.5">
-                                                <span className="text-gray-900 font-bold text-sm">GH₵{product.price.toFixed(2)}</span>
+                                                <span className="text-gray-900 font-bold text-sm tabular-nums">
+                                                    GH₵{product.price.toFixed(2)}
+                                                    {(product.regularPrice || 0) > product.price && (
+                                                        <span className="ml-1.5 text-[11px] font-medium text-gray-400 line-through">GH₵{product.regularPrice!.toFixed(2)}</span>
+                                                    )}
+                                                </span>
                                                 {!outOfStock && (
                                                     <div className="w-7 h-7 rounded-full bg-gray-50 text-gray-900 flex items-center justify-center group-hover:bg-gray-900 group-hover:text-white transition-colors">
                                                         <i className="ri-add-line text-sm" />

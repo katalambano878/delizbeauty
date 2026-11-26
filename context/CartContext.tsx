@@ -1,6 +1,7 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
+import { usePathname } from 'next/navigation';
 
 export type CartItem = {
     id: string;
@@ -86,6 +87,61 @@ export function CartProvider({ children }: { children: ReactNode }) {
         localStorage.setItem('cart', JSON.stringify(cart));
         window.dispatchEvent(new Event('cartUpdated'));
     }, [cart]);
+
+    // Keep saved cart prices in step with the shop. A cart is a snapshot, so without
+    // this a sale that started or ended after the item was added would show the old
+    // price here and a different one at payment. Checked when the cart first loads,
+    // and again every time the shopper opens the cart or checkout page.
+    const pathname = usePathname();
+    const cartLoaded = cart !== null;
+    const cartRef = useRef<CartItem[]>([]);
+    cartRef.current = cart || [];
+    const lastPriceCheck = useRef(0);
+
+    useEffect(() => {
+        if (!cartLoaded) return;
+        const sent = cartRef.current;
+        if (sent.length === 0) return;
+        const paying = pathname === '/cart' || pathname === '/checkout';
+        if (!paying && lastPriceCheck.current > 0) return;
+        lastPriceCheck.current = Date.now();
+
+        let cancelled = false;
+        fetch('/api/storefront/cart-prices', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                items: sent.map((item) => ({ id: item.id, variant: item.variant || null, variantId: item.variantId || null })),
+            }),
+        })
+            .then((res) => (res.ok ? res.json() : null))
+            .then((result) => {
+                if (cancelled || !Array.isArray(result?.prices)) return;
+                const current = new Map<string, number>();
+                sent.forEach((item, index) => {
+                    const price = Number(result.prices[index]?.price);
+                    if (isPurchasablePrice(price)) current.set(`${item.id}|${item.variant || ''}`, price);
+                });
+                setCart((prev) => {
+                    if (!prev) return prev;
+                    let changed = false;
+                    const next = prev.map((item) => {
+                        const price = current.get(`${item.id}|${item.variant || ''}`);
+                        if (price == null || Math.abs(price - item.price) < 0.005) return item;
+                        changed = true;
+                        return { ...item, price };
+                    });
+                    return changed ? next : prev;
+                });
+            })
+            .catch(() => {
+                // Offline or the check failed: keep the saved prices. Checkout prices every line again.
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [cartLoaded, pathname]);
 
     const addToCart = (newItem: CartItem): boolean => {
         // Block items with no price or a price of 0 — they cannot be purchased.

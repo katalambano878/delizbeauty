@@ -12,23 +12,25 @@ import {
   scoreCategoryMatch,
   tokenizeSearchQuery,
 } from '@/lib/product-search';
+import { priceProducts } from '@/lib/pricing';
+import { getStorePricing } from '@/lib/store-pricing';
 
 const PRODUCT_SELECT = `
-  id, name, slug, price, compare_at_price, quantity, moq, rating_avg, created_at, featured, status, category_id,
+  id, name, slug, price, compare_at_price, quantity, moq, rating_avg, created_at, featured, status, category_id, metadata,
   description, short_description, sku, brand, tags,
   categories(id, name, slug, parent_id),
   product_categories(category_id, categories(id, name, slug, parent_id)),
   product_images(url, position),
-  product_variants(id, name, price, quantity, option1, option2, image_url, sort_order, sku)
+  product_variants(id, name, price, compare_at_price, quantity, option1, option2, image_url, sort_order, sku, metadata)
 `;
 
 const PRODUCT_SELECT_CATEGORY_INNER = `
-  id, name, slug, price, compare_at_price, quantity, moq, rating_avg, created_at, featured, status, category_id,
+  id, name, slug, price, compare_at_price, quantity, moq, rating_avg, created_at, featured, status, category_id, metadata,
   description, short_description, sku, brand, tags,
   categories(id, name, slug, parent_id),
   product_categories!inner(category_id, categories!inner(id, name, slug, parent_id)),
   product_images(url, position),
-  product_variants(id, name, price, quantity, option1, option2, image_url, sort_order, sku)
+  product_variants(id, name, price, compare_at_price, quantity, option1, option2, image_url, sort_order, sku, metadata)
 `;
 
 function applyPriceAndRating<T extends { price?: number; rating_avg?: number }>(
@@ -196,6 +198,8 @@ async function runSmartSearch(params: {
     ranked = ranked.filter((product) => productBelongsToCategoryIds(product, categoryFilterIds));
   }
 
+  // Price first, so the price filter and sort use what the shopper actually pays.
+  ranked = priceProducts(ranked, await getStorePricing(), { stripMetadata: true });
   ranked = applyPriceAndRating(ranked, priceMin, priceMax, rating);
   ranked = sortProducts(ranked, sortBy, true);
 
@@ -314,8 +318,10 @@ export async function GET(request: Request) {
       ? (data || []).filter((product) => productBelongsToCategoryIds(product, categoryFilterIds))
       : (data || []);
 
+    const pricedData = priceProducts(safeData as any[], await getStorePricing(), { stripMetadata: true });
+
     return NextResponse.json(
-      { data: safeData, count: count ?? 0 },
+      { data: pricedData, count: count ?? 0 },
       {
         headers: {
           'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=60',

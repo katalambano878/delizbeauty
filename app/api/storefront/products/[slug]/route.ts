@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { priceProduct } from '@/lib/pricing';
+import { getStorePricing } from '@/lib/store-pricing';
 
 /**
  * GET /api/storefront/products/[slug]
@@ -27,7 +29,7 @@ export async function GET(
         *,
         categories(name, slug),
         product_categories(category_id, is_primary, categories(name, slug)),
-        product_variants(id, name, price, quantity, option1, option2, image_url, sku, metadata, sort_order),
+        product_variants(id, name, price, compare_at_price, quantity, option1, option2, image_url, sku, metadata, sort_order),
         product_images(url, position, alt_text, media_type)
       `)
       .eq('status', 'active');
@@ -49,8 +51,11 @@ export async function GET(
       productData.product_variants.sort((a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
     }
 
-    return NextResponse.json(productData, {
-      headers: { 'Cache-Control': 'public, s-maxage=120, stale-while-revalidate=300' },
+    // Sale and discount rules decide the price the shopper sees and adds to the cart.
+    const priced = priceProduct(productData, await getStorePricing());
+
+    return NextResponse.json(priced, {
+      headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' },
     });
   } catch (err: any) {
     console.error('[Storefront API] Product by slug error:', err);

@@ -66,7 +66,7 @@ function formatProduct(p: any): ShopProduct {
     image: firstImageUrl,
     rating: p.rating_avg || 0,
     reviewCount: 0,
-    badge: p.compare_at_price > p.price ? 'Sale' : undefined,
+    badge: p.compare_at_price > (minVariantPrice ?? p.price) ? 'Sale' : undefined,
     inStock: effectiveStock > 0,
     maxStock: effectiveStock || 50,
     moq: p.moq || 1,

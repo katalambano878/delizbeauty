@@ -9,6 +9,8 @@ import {
     getHubtelPublicBaseUrl,
 } from '@/lib/hubtel';
 import { matchProductVariant } from '@/lib/order-item-display';
+import { resolveLinePrice } from '@/lib/pricing';
+import { getStorePricing } from '@/lib/store-pricing';
 
 const isUUID = (str: string) =>
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
@@ -81,9 +83,12 @@ export async function POST(req: Request) {
         const { data: products } = productIds.length > 0
             ? await supabaseAdmin
                 .from('products')
-                .select('id, name, price, status, quantity, track_quantity, continue_selling, product_variants(id, name, option1, option2, price, quantity)')
+                .select('id, name, price, compare_at_price, metadata, status, quantity, track_quantity, continue_selling, product_variants(id, name, option1, option2, price, compare_at_price, metadata, quantity)')
                 .in('id', productIds as string[])
             : { data: [] as any[] };
+
+        // The sale and discount rules in force at the moment of payment.
+        const pricing = await getStorePricing({ fresh: true });
 
         const productById = new Map<string, any>((products || []).map((p: any) => [p.id, p]));
 
@@ -102,13 +107,14 @@ export async function POST(req: Request) {
                 continue;
             }
 
-            // Resolve authoritative unit price (variant price beats base price).
+            // Resolve authoritative unit price (variant price beats base price),
+            // with any running sale or product discount applied.
             const variant = matchProductVariant(
                 product.product_variants,
                 item.variant_name,
                 item.variant_id || item.metadata?.variant_id
             );
-            const authoritativePrice = Number(variant ? variant.price : product.price);
+            const authoritativePrice = resolveLinePrice(product, variant, pricing);
             if (!Number.isFinite(authoritativePrice) || authoritativePrice <= 0) {
                 // Unpriced product — cannot be sold.
                 removedItems.push(label);

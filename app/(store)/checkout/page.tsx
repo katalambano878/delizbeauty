@@ -301,6 +301,7 @@ export default function CheckoutPage() {
             id: item.id,
             name: item.name,
             variant: item.variant || null,
+            variantId: item.variantId || null,
             quantity: item.quantity,
             price: item.price,
             image: item.image,

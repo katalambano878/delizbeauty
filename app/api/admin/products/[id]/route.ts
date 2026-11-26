@@ -131,6 +131,17 @@ export async function PUT(
     }
     productData.slug = slugCandidate;
 
+    // Keep the metadata this form does not edit, such as a discount set under
+    // Sale & discounts. Without this, saving a product would silently end it.
+    if (productData.metadata && typeof productData.metadata === 'object') {
+      const { data: current } = await supabaseAdmin
+        .from('products')
+        .select('metadata')
+        .eq('id', productId)
+        .maybeSingle();
+      productData.metadata = { ...(current?.metadata || {}), ...productData.metadata };
+    }
+
     const { error: updateError } = await supabaseAdmin
       .from('products')
       .update(productData)
@@ -215,7 +226,11 @@ export async function PUT(
         option2: v.color?.trim() || null,
         image_url: v.image_url?.trim() || null,
         sort_order: v.sort_order ?? idx,
-        metadata: v.colorHex ? { color_hex: v.colorHex } : {},
+        metadata: {
+          ...(v.colorHex ? { color_hex: v.colorHex } : {}),
+          // Shown instead of the price while a whole-store sale is on.
+          ...(parseFloat(v.sale_price) > 0 ? { sale_price: parseFloat(v.sale_price) } : {}),
+        },
       }));
       // Insert in chunks of 100 to avoid payload limits
       const CHUNK = 100;

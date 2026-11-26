@@ -1,3 +1,5 @@
+import { parseStorePricing, resolveLinePrice, round2, type StorePricing } from './pricing';
+
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 export type ChatProduct = {
@@ -79,7 +81,8 @@ export async function searchProducts(
     return [];
   }
 
-  return (data || []).map(mapProduct);
+  const pricing = await loadStorePricing(supabase);
+  return (data || []).map((p: any) => mapProduct(p, pricing));
 }
 
 // ─── 2. Get Product for Cart (existing) ─────────────────────────────────────
@@ -101,7 +104,7 @@ export async function getProductForCart(
     : await q.eq('slug', slugOrId).single();
 
   if (error || !data) return null;
-  return mapProduct(data);
+  return mapProduct(data, await loadStorePricing(supabase));
 }
 
 // ─── 3. Track Order ─────────────────────────────────────────────────────────
@@ -326,7 +329,8 @@ export async function getRecommendations(
     .limit(4);
 
   if (error || !data) return [];
-  return data.map(mapProduct);
+  const pricing = await loadStorePricing(supabase);
+  return data.map((p: any) => mapProduct(p, pricing));
 }
 
 // ─── 9. Get Store Info (static) ─────────────────────────────────────────────
@@ -524,13 +528,17 @@ export async function createChatOrder(
 
     const productMap = new Map<string, any>(products.map((p: any) => [p.id, p]));
 
+    // Charge what the shop shows: the running sale or product discount applies here too.
+    const pricing = await loadStorePricing(supabaseAdmin);
+    const unitPrice = (product: any) => resolveLinePrice(product, null, pricing);
+
     // Validate stock and price
     for (const item of items) {
       const product = productMap.get(item.productId);
       if (!product) {
         return { success: false, message: `Product not found: ${item.productId}` };
       }
-      const price = Number(product.price);
+      const price = unitPrice(product);
       if (!Number.isFinite(price) || price <= 0) {
         return { success: false, message: `Sorry, "${product.name}" is currently unavailable for purchase (no price set).` };
       }
@@ -543,9 +551,10 @@ export async function createChatOrder(
     let subtotal = 0;
     for (const item of items) {
       const product = productMap.get(item.productId)!;
-      subtotal += Number(product.price) * item.quantity;
+      subtotal += round2(unitPrice(product) * item.quantity);
     }
-    const total = subtotal + shippingCost;
+    subtotal = round2(subtotal);
+    const total = round2(subtotal + shippingCost);
 
     // Generate order number and tracking number
     const orderNumber = `ORD-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
@@ -608,8 +617,8 @@ export async function createChatOrder(
         product_id: product.id,
         product_name: product.name,
         quantity: item.quantity,
-        unit_price: Number(product.price),
-        total_price: Number(product.price) * item.quantity,
+        unit_price: unitPrice(product),
+        total_price: round2(unitPrice(product) * item.quantity),
         metadata: {
           image: product.product_images?.[0]?.url || '',
           slug: product.slug,
@@ -760,14 +769,28 @@ export async function createChatOrder(
 
 // ─── Helper ─────────────────────────────────────────────────────────────────
 
-function mapProduct(p: any): ChatProduct {
+/** The whole-store sale setting, read with whichever Supabase client the caller has. */
+async function loadStorePricing(supabase: any): Promise<StorePricing> {
+  try {
+    const { data } = await supabase
+      .from('site_settings')
+      .select('value')
+      .eq('key', 'store_pricing')
+      .maybeSingle();
+    return parseStorePricing(data?.value);
+  } catch {
+    return parseStorePricing(null);
+  }
+}
+
+function mapProduct(p: any, pricing: StorePricing): ChatProduct {
   const qty = Number(p.quantity) ?? 0;
   const moq = Number(p.metadata?.moq) || 1;
   return {
     id: p.id,
     name: p.name,
     slug: p.slug,
-    price: Number(p.price),
+    price: resolveLinePrice(p, null, pricing),
     image: p.product_images?.[0]?.url || '',
     quantity: qty,
     maxStock: qty,

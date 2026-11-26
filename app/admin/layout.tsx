@@ -257,6 +257,12 @@ export default function AdminLayout({
       permissionKey: 'analytics'
     },
     {
+      title: 'Sale & Discounts',
+      icon: 'ri-price-tag-3-line',
+      path: '/admin/sales',
+      permissionKey: 'sales'
+    },
+    {
       title: 'Coupons',
       icon: 'ri-coupon-2-line',
       path: '/admin/coupons',

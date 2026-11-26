@@ -167,11 +167,10 @@ export default function ProductDetailClient({ slug }: { slug: string }) {
               }
 
               const relatedIds = [...new Set(links.map((row: any) => row.product_id))].slice(0, 4);
-              return supabase
-                .from('products')
-                .select('*, product_images(url, position), product_variants(id, name, price, quantity)')
-                .in('id', relatedIds)
-                .eq('status', 'active');
+              // Through the storefront API, so related products carry sale prices too.
+              const relatedRes = await fetch(`/api/storefront/products?ids=${relatedIds.join(',')}`);
+              if (!relatedRes.ok) return { data: [], error: null };
+              return { data: await relatedRes.json(), error: null };
             }) as any,
             5 * 60 * 1000
           );
@@ -188,6 +187,7 @@ export default function ProductDetailClient({ slug }: { slug: string }) {
                 slug: p.slug,
                 name: p.name,
                 price: p.price,
+                originalPrice: p.compare_at_price || undefined,
                 image: p.product_images?.[0]?.url || 'https://via.placeholder.com/800?text=No+Image',
                 rating: p.rating_avg || 0,
                 reviewCount: 0,
@@ -283,8 +283,13 @@ export default function ProductDetailClient({ slug }: { slug: string }) {
     );
   }
 
-  const discount = product.compare_at_price ? Math.round((1 - activePrice / product.compare_at_price) * 100) : 0;
   const minVariantPrice = hasVariants ? Math.min(...product.variants.map((v: any) => v.price || product.price)) : product.price;
+  // The price on show, and the "was" price that belongs to it: the chosen option's own,
+  // or the product's (for a product with options, that of its cheapest option).
+  const shownPrice = hasVariants && !selectedVariant ? minVariantPrice : activePrice;
+  const shownCompare = Number(selectedVariant ? selectedVariant.compare_at_price : product.compare_at_price) || 0;
+  const wasPrice = shownCompare > shownPrice ? shownCompare : 0;
+  const discount = wasPrice ? Math.round((1 - shownPrice / wasPrice) * 100) : 0;
 
   const productSchema = generateProductSchema({
     name: product.name,
@@ -437,8 +442,8 @@ export default function ProductDetailClient({ slug }: { slug: string }) {
                   ) : (
                     <span className="text-[2rem] font-semibold text-gray-950 tabular-nums tracking-tight">GH₵{activePrice.toFixed(2)}</span>
                   )}
-                  {product.compare_at_price && product.compare_at_price > activePrice && (
-                    <span className="text-lg text-gray-400 line-through tabular-nums">GH₵{product.compare_at_price.toFixed(2)}</span>
+                  {wasPrice > 0 && (
+                    <span className="text-lg text-gray-400 line-through tabular-nums">GH₵{wasPrice.toFixed(2)}</span>
                   )}
                   {discount > 0 && (
                     <span className="text-xs font-semibold uppercase tracking-wide text-red-700 bg-red-50 px-2 py-1 rounded-full">Save {discount}%</span>
