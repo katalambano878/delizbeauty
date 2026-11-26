@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { matchProductVariant } from '@/lib/order-item-display';
 import { resolveLinePrice, round2 } from '@/lib/pricing';
-import { getStorePricing } from '@/lib/store-pricing';
 
 const PRODUCT_SELECT =
   'id, slug, price, compare_at_price, metadata, product_variants(id, name, option1, option2, image_url, sku, price, compare_at_price, metadata)';
@@ -38,20 +37,19 @@ export async function POST(request: Request) {
     };
 
     // 0. Price every line on the server, BEFORE creating the order. The browser's
-    // prices are never trusted: each unit price comes from the database with the
-    // sale and discount rules that are active right now, so a stale or tampered
+    // prices are never trusted: each unit price comes from the database with any
+    // sale that is live right now, so a stale or tampered
     // cart cannot buy at the wrong price and unpriced items cannot be bought.
     const cartUuids = cart.map((i: any) => i.id).filter(isValidUUID);
     const cartSlugs = cart.map((i: any) => i.slug || i.id).filter((s: any) => s && !isValidUUID(s));
 
-    const [{ data: byId }, { data: bySlug }, pricing] = await Promise.all([
+    const [{ data: byId }, { data: bySlug }] = await Promise.all([
       cartUuids.length > 0
         ? supabaseAdmin.from('products').select(PRODUCT_SELECT).in('id', cartUuids)
         : Promise.resolve({ data: [] as any[] }),
       cartSlugs.length > 0
         ? supabaseAdmin.from('products').select(PRODUCT_SELECT).in('slug', cartSlugs)
         : Promise.resolve({ data: [] as any[] }),
-      getStorePricing({ fresh: true }),
     ]);
 
     const productByKey = new Map<string, any>();
@@ -104,7 +102,7 @@ export async function POST(request: Request) {
         item.variantId
       );
 
-      const unitPrice = resolveLinePrice(product, variant, pricing);
+      const unitPrice = resolveLinePrice(product, variant);
       if (!isPositivePrice(unitPrice)) {
         return NextResponse.json(
           { error: `"${item.name}" is currently unavailable for purchase (no price set). Please remove it from your cart.` },

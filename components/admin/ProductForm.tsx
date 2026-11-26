@@ -5,7 +5,7 @@ import { useState, useEffect } from 'react';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { supabase } from '@/lib/supabase'; // used for categories fetch only
 import { useRouter } from 'next/navigation';
-import { markdownLabel, markdownPrice, readMarkdown } from '@/lib/pricing';
+import { readSale } from '@/lib/pricing';
 
 interface ProductFormProps {
     initialData?: any;
@@ -30,10 +30,8 @@ export default function ProductForm({ initialData, isEditMode = false }: Product
     const [price, setPrice] = useState(initialData?.price ?? '');
     const [comparePrice, setComparePrice] = useState(initialData?.compare_at_price ?? '');
     const [onSale, setOnSale] = useState(!!(initialData?.compare_at_price && parseFloat(initialData.compare_at_price) > parseFloat(initialData?.price || 0)));
-    // Charged instead of the price only while "Sale prices" is on under Sale & Discounts.
-    const [salePrice, setSalePrice] = useState(initialData?.metadata?.sale_price ?? '');
-    // A discount put on this product under Sale & Discounts (kept when the product is saved).
-    const activeDiscount = readMarkdown(initialData?.metadata);
+    // A sale set on this product under Sales. Saving the product keeps it.
+    const activeSale = readSale(initialData?.metadata);
     const [wholesalePrice, setWholesalePrice] = useState(initialData?.metadata?.wholesale_price ?? '');
     const [wholesaleMinQty, setWholesaleMinQty] = useState(initialData?.metadata?.wholesale_min_qty ?? '');
     const [sku, setSku] = useState(initialData?.sku || '');
@@ -125,6 +123,7 @@ export default function ProductForm({ initialData, isEditMode = false }: Product
                 stock: v.stock?.toString() || '0',
                 sku: v.sku || '',
                 image_url: v.image_url || undefined,
+                // Not edited here: carried through so a variant keeps the sale price set under Sales.
                 sale_price: v.metadata?.sale_price != null ? String(v.metadata.sale_price) : ''
             };
         });
@@ -502,7 +501,6 @@ export default function ProductForm({ initialData, isEditMode = false }: Product
                 metadata: {
                     low_stock_threshold: parseInt(lowStockThreshold) || 5,
                     preorder_shipping: preorderShipping.trim() || null,
-                    sale_price: parseFloat(salePrice) > 0 ? parseFloat(salePrice) : null,
                     wholesale_price: wholesalePrice ? parseFloat(wholesalePrice) : null,
                     wholesale_min_qty: wholesaleMinQty ? parseInt(wholesaleMinQty) : null
                 },
@@ -840,16 +838,19 @@ export default function ProductForm({ initialData, isEditMode = false }: Product
 
                     {activeTab === 'pricing' && (
                         <div className="space-y-6 max-w-3xl">
-                            {activeDiscount && (
+                            {activeSale && (
                                 <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
                                     <i className="ri-price-tag-3-line text-lg leading-none mt-0.5" aria-hidden />
                                     <p>
-                                        This product has <strong>{markdownLabel(activeDiscount)}</strong> from Sale &amp; Discounts
-                                        {parseFloat(price) > 0 && markdownPrice(parseFloat(price), activeDiscount) != null && (
-                                            <>, so customers pay <strong>GH₵{markdownPrice(parseFloat(price), activeDiscount)!.toFixed(2)}</strong></>
-                                        )}
-                                        . The price below is the regular price, and saving this product keeps the discount.{' '}
-                                        <Link href="/admin/sales?tab=products" className="font-semibold underline underline-offset-2">Change or end it</Link>
+                                        This product has a sale set under Sales (
+                                        {activeSale.type === 'percent'
+                                            ? `${activeSale.value}% off`
+                                            : activeSale.type === 'fixed'
+                                                ? `sale price GH₵${activeSale.value.toFixed(2)}`
+                                                : 'its own price for each variant'}
+                                        ), and it is switched <strong>{activeSale.live ? 'on' : 'off'}</strong>. The price below is the
+                                        regular price, and saving this product keeps the sale.{' '}
+                                        <Link href="/admin/sales" className="font-semibold underline underline-offset-2">Change it in Sales</Link>
                                     </p>
                                 </div>
                             )}
@@ -926,39 +927,6 @@ export default function ProductForm({ initialData, isEditMode = false }: Product
                                 >
                                     <span className={`absolute top-1 w-5 h-5 bg-white rounded-full shadow transition-all ${onSale ? 'left-7' : 'left-1'}`} />
                                 </button>
-                            </div>
-
-                            {/* Sale price: only used while a whole-store sale is switched on */}
-                            <div className="pt-6 border-t border-gray-200">
-                                <h3 className="text-lg font-bold text-gray-900 mb-2">Sale price (optional)</h3>
-                                <p className="text-sm text-gray-600 mb-4">
-                                    Customers pay this instead of the price, but only while <strong>Sale prices</strong> is switched on under{' '}
-                                    <Link href="/admin/sales" className="font-semibold underline underline-offset-2">Sale &amp; Discounts</Link>.
-                                    Leave it empty and this product stays at its price during a sale.
-                                </p>
-                                <div className="relative max-w-xs">
-                                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-600 font-semibold">GH₵</span>
-                                    <input
-                                        type="number"
-                                        value={salePrice}
-                                        onChange={(e) => setSalePrice(e.target.value)}
-                                        className="w-full pl-16 pr-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-600 focus:border-gray-600"
-                                        step="0.01"
-                                        min="0"
-                                        placeholder="0.00"
-                                        aria-label="Sale price in cedis"
-                                    />
-                                </div>
-                                {parseFloat(salePrice) > 0 && parseFloat(price) > 0 && parseFloat(salePrice) >= parseFloat(price) && (
-                                    <p className="text-sm text-red-700 mt-2">
-                                        The sale price must be lower than the price (GH₵{parseFloat(price).toFixed(2)}), or it will be ignored.
-                                    </p>
-                                )}
-                                {variantCombinations.length > 0 && (
-                                    <p className="text-sm text-gray-500 mt-2">
-                                        This product has options. Set a sale price for each one in the Variants table. An option left empty uses the sale price above when it is lower than that option&apos;s price.
-                                    </p>
-                                )}
                             </div>
 
                             {/* Wholesale */}
@@ -1316,7 +1284,6 @@ export default function ProductForm({ initialData, isEditMode = false }: Product
                                                     )}
                                                     <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Variant image</th>
                                                     <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Price (GH₵)</th>
-                                                    <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700" title="Charged only while Sale prices is on under Sale & Discounts">Sale price (GH₵)</th>
                                                     <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Stock</th>
                                                 </tr>
                                             </thead>
@@ -1396,18 +1363,6 @@ export default function ProductForm({ initialData, isEditMode = false }: Product
                                                                     className="w-28 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-1 focus:ring-gray-600 focus:border-gray-600"
                                                                     step="0.01"
                                                                     placeholder={price?.toString() || '0'}
-                                                                />
-                                                            </td>
-                                                            <td className="py-3 px-4">
-                                                                <input
-                                                                    type="number"
-                                                                    value={d.sale_price || ''}
-                                                                    onChange={(e) => updateVariantField(combo.key, 'sale_price', e.target.value)}
-                                                                    className="w-28 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-1 focus:ring-gray-600 focus:border-gray-600"
-                                                                    step="0.01"
-                                                                    min="0"
-                                                                    placeholder="None"
-                                                                    aria-label={`Sale price for ${[combo.color, combo.size].filter(Boolean).join(' ')}`}
                                                                 />
                                                             </td>
                                                             <td className="py-3 px-4">

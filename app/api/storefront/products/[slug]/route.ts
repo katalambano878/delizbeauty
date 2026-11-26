@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { priceProduct } from '@/lib/pricing';
-import { getStorePricing } from '@/lib/store-pricing';
 
 /**
  * GET /api/storefront/products/[slug]
@@ -51,8 +50,8 @@ export async function GET(
       productData.product_variants.sort((a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
     }
 
-    // Sale and discount rules decide the price the shopper sees and adds to the cart.
-    const priced = priceProduct(productData, await getStorePricing());
+    // A live sale decides the price the shopper sees and adds to the cart.
+    const priced = priceProduct(productData);
 
     return NextResponse.json(priced, {
       headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' },

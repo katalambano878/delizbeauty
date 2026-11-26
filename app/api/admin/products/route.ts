@@ -196,7 +196,7 @@ export async function POST(request: Request) {
         sort_order: v.sort_order ?? idx,
         metadata: {
           ...(v.colorHex ? { color_hex: v.colorHex } : {}),
-          // Shown instead of the price while a whole-store sale is on.
+          // The variant's own sale price, set under Sales.
           ...(parseFloat(v.sale_price) > 0 ? { sale_price: parseFloat(v.sale_price) } : {}),
         },
       }));

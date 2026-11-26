@@ -227,6 +227,12 @@ export default function AdminLayout({
       permissionKey: 'products'
     },
     {
+      title: 'Sales',
+      icon: 'ri-price-tag-3-line',
+      path: '/admin/sales',
+      permissionKey: 'sales'
+    },
+    {
       title: 'Categories',
       icon: 'ri-folder-line',
       path: '/admin/categories',
@@ -255,12 +261,6 @@ export default function AdminLayout({
       icon: 'ri-bar-chart-line',
       path: '/admin/analytics',
       permissionKey: 'analytics'
-    },
-    {
-      title: 'Sale & Discounts',
-      icon: 'ri-price-tag-3-line',
-      path: '/admin/sales',
-      permissionKey: 'sales'
     },
     {
       title: 'Coupons',

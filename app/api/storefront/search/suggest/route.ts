@@ -9,7 +9,6 @@ import {
   tokenizeSearchQuery,
 } from '@/lib/product-search';
 import { priceProducts } from '@/lib/pricing';
-import { getStorePricing } from '@/lib/store-pricing';
 
 const PRODUCT_SELECT = `
   id,
@@ -135,7 +134,7 @@ export async function GET(request: Request) {
       }
     }
 
-    const rankedProducts = priceProducts(ranked.slice(0, limit), await getStorePricing())
+    const rankedProducts = priceProducts(ranked.slice(0, limit))
       .map((product) => {
         const images = Array.isArray(product.product_images)
           ? [...product.product_images].sort(

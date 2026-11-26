@@ -32,7 +32,7 @@ A physical shop at Madina, Ritz Junction, Accra that also delivers nationwide, s
 - Next.js app that runs on the shop's own server (Coolify) and deploys when `main` is pushed to GitHub. It talks to its database through the Supabase client. Schema changes cannot be run from the app, so new features should prefer existing columns.
 - Storefront prices are served by the `/api/storefront/*` routes; the order total is decided on the server at checkout and again at payment.
 - Admin access is by role: `admin` sees everything, `staff` sees the screens their role allows.
-- Sale and discount rules live in `site_settings.store_pricing` and in product `metadata`; the price column always holds the regular price.
+- A sale is a note in the product's `metadata.sale` with its own on/off switch; the price column always holds the regular price. `site_settings.sales_active` records the all-sales switch.
 
 ## Brand Commitments
 

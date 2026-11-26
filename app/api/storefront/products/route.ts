@@ -5,18 +5,17 @@ import {
   resolveCategoryIdsFromSlugs,
 } from '@/lib/product-categories';
 import { priceProducts } from '@/lib/pricing';
-import { getStorePricing } from '@/lib/store-pricing';
 
-// Simple in-memory cache. It holds the rows as stored (regular prices); the sale and
-// discount rules are applied on every response, so a sale shows up without waiting.
+// Simple in-memory cache. It holds the rows as stored; sale prices are worked out on
+// every response from each product's own sale note.
 let cache: { data: any; timestamp: number } | null = null;
 const CACHE_TTL = 15 * 60 * 1000; // 15 minutes
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Short edge cache so starting or stopping a sale reaches shoppers within about a minute.
 const CACHE_HEADER = 'public, s-maxage=60, stale-while-revalidate=300';
 
-async function withPrices(rows: any[]) {
-    return priceProducts(rows, await getStorePricing(), { stripMetadata: true });
+function withPrices(rows: any[]) {
+    return priceProducts(rows, { stripMetadata: true });
 }
 
 export async function GET(request: Request) {
@@ -33,7 +32,7 @@ export async function GET(request: Request) {
     const cacheKey = `${featured}-${limit}-${category || 'all'}`;
 
     if (featured && cache && cache.data?.[cacheKey] && Date.now() - cache.timestamp < CACHE_TTL) {
-        return NextResponse.json(await withPrices(cache.data[cacheKey]), {
+        return NextResponse.json(withPrices(cache.data[cacheKey]), {
             headers: { 'Cache-Control': CACHE_HEADER, 'X-Cache': 'HIT' }
         });
     }
@@ -107,7 +106,7 @@ export async function GET(request: Request) {
             cache.timestamp = Date.now();
         }
 
-        return NextResponse.json(await withPrices(safeData), {
+        return NextResponse.json(withPrices(safeData), {
             headers: { 'Cache-Control': CACHE_HEADER, 'X-Cache': 'MISS' }
         });
     } catch (err: any) {

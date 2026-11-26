@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { matchProductVariant } from '@/lib/order-item-display';
 import { resolveLinePrice } from '@/lib/pricing';
-import { getStorePricing } from '@/lib/store-pricing';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -29,15 +28,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ prices: items.map(() => ({ price: null })) });
     }
 
-    const [{ data: products, error }, pricing] = await Promise.all([
-      supabaseAdmin
+    const { data: products, error } = await supabaseAdmin
         .from('products')
         .select(
           'id, price, compare_at_price, metadata, status, product_variants(id, name, option1, option2, price, compare_at_price, metadata)'
         )
-        .in('id', ids),
-      getStorePricing({ fresh: true }),
-    ]);
+        .in('id', ids);
 
     if (error) {
       console.error('[Cart prices] products error:', error);
@@ -50,7 +46,7 @@ export async function POST(request: Request) {
       const product = productById.get(item?.id);
       if (!product || product.status !== 'active') return { price: null };
       const variant = matchProductVariant(product.product_variants || [], item.variant, item.variantId);
-      const price = resolveLinePrice(product, variant, pricing);
+      const price = resolveLinePrice(product, variant);
       return { price: price > 0 ? price : null };
     });
 

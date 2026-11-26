@@ -1,4 +1,4 @@
-import { parseStorePricing, resolveLinePrice, round2, type StorePricing } from './pricing';
+import { resolveLinePrice, round2 } from './pricing';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -81,8 +81,7 @@ export async function searchProducts(
     return [];
   }
 
-  const pricing = await loadStorePricing(supabase);
-  return (data || []).map((p: any) => mapProduct(p, pricing));
+  return (data || []).map(mapProduct);
 }
 
 // ─── 2. Get Product for Cart (existing) ─────────────────────────────────────
@@ -104,7 +103,7 @@ export async function getProductForCart(
     : await q.eq('slug', slugOrId).single();
 
   if (error || !data) return null;
-  return mapProduct(data, await loadStorePricing(supabase));
+  return mapProduct(data);
 }
 
 // ─── 3. Track Order ─────────────────────────────────────────────────────────
@@ -329,8 +328,7 @@ export async function getRecommendations(
     .limit(4);
 
   if (error || !data) return [];
-  const pricing = await loadStorePricing(supabase);
-  return data.map((p: any) => mapProduct(p, pricing));
+  return data.map(mapProduct);
 }
 
 // ─── 9. Get Store Info (static) ─────────────────────────────────────────────
@@ -528,9 +526,8 @@ export async function createChatOrder(
 
     const productMap = new Map<string, any>(products.map((p: any) => [p.id, p]));
 
-    // Charge what the shop shows: the running sale or product discount applies here too.
-    const pricing = await loadStorePricing(supabaseAdmin);
-    const unitPrice = (product: any) => resolveLinePrice(product, null, pricing);
+    // Charge what the shop shows: a live sale applies here too.
+    const unitPrice = (product: any) => resolveLinePrice(product, null);
 
     // Validate stock and price
     for (const item of items) {
@@ -769,28 +766,14 @@ export async function createChatOrder(
 
 // ─── Helper ─────────────────────────────────────────────────────────────────
 
-/** The whole-store sale setting, read with whichever Supabase client the caller has. */
-async function loadStorePricing(supabase: any): Promise<StorePricing> {
-  try {
-    const { data } = await supabase
-      .from('site_settings')
-      .select('value')
-      .eq('key', 'store_pricing')
-      .maybeSingle();
-    return parseStorePricing(data?.value);
-  } catch {
-    return parseStorePricing(null);
-  }
-}
-
-function mapProduct(p: any, pricing: StorePricing): ChatProduct {
+function mapProduct(p: any): ChatProduct {
   const qty = Number(p.quantity) ?? 0;
   const moq = Number(p.metadata?.moq) || 1;
   return {
     id: p.id,
     name: p.name,
     slug: p.slug,
-    price: resolveLinePrice(p, null, pricing),
+    price: resolveLinePrice(p, null),
     image: p.product_images?.[0]?.url || '',
     quantity: qty,
     maxStock: qty,

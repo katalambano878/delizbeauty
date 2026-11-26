@@ -1,727 +1,112 @@
 'use client';
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { adminFetch, cedis } from '@/lib/admin-fetch';
-import { markdownLabel, markdownPrice, type Markdown, type PricingMode } from '@/lib/pricing';
+import { adminFetch } from '@/lib/admin-fetch';
 import { storageImageUrl } from '@/lib/storage-image';
 
-type Row = {
+type ProductRow = {
   id: string;
   name: string;
-  sku: string | null;
+  slug: string;
   status: string;
-  price: number;
-  low: number;
-  high: number;
-  options: number;
-  category_id: string | null;
-  category: string | null;
+  category: string;
   image: string | null;
-  markdown: Markdown | null;
-  has_sale_price: boolean;
+  variantsCount: number;
+  /** Regular price (for a product with options, its cheapest option). */
+  regular: number;
+  /** Sale price, whether the sale is switched on or off. Null when not on sale. */
+  sale: number | null;
+  percentOff: number;
+  hasSale: boolean;
+  live: boolean;
 };
 
-type SalesData = {
-  mode: PricingMode;
-  percent: number;
-  isAdmin: boolean;
-  maxPercent: number;
-  products: Row[];
-  categories: { id: string; name: string }[];
-};
+type VariantRow = { id: string; label: string; regular: number; sale: number | null };
+type SaleFilter = 'all' | 'on' | 'live' | 'paused' | 'off';
 
-type Notice = { kind: 'ok' | 'error'; text: string } | null;
+const PAGE_SIZE = 24;
+const fmt = (v: number) => `GH₵${Number(v || 0).toFixed(2)}`;
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+const isPaused = (p: ProductRow) => p.hasSale && !p.live;
 
-const PERCENT_PRESETS = [10, 15, 20, 25, 30, 50];
-const AMOUNT_PRESETS = [5, 10, 20, 50];
-const ROWS_PER_PAGE = 60;
-const FOCUS = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-700 focus-visible:ring-offset-2';
-
-function plural(n: number, one: string, many = `${one}s`) {
-  return `${n.toLocaleString('en-GH')} ${n === 1 ? one : many}`;
-}
-
-/* ─── Whole store ─────────────────────────────────────────────────────────── */
-
-function WholeStore({
-  data,
-  onSaved,
-  onNotice,
-  showProducts,
+function Switch({
+  on,
+  onClick,
+  disabled,
+  pending,
+  label,
+  size = 'sm',
 }: {
-  data: SalesData;
-  onSaved: (mode: PricingMode, percent: number) => void;
-  onNotice: (notice: Notice) => void;
-  showProducts: () => void;
+  on: boolean;
+  onClick: () => void;
+  disabled?: boolean;
+  pending?: boolean;
+  label: string;
+  size?: 'sm' | 'lg';
 }) {
-  const [choice, setChoice] = useState<PricingMode>(data.mode);
-  const [percent, setPercent] = useState(data.percent > 0 ? String(data.percent) : '20');
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    setChoice(data.mode);
-    if (data.percent > 0) setPercent(String(data.percent));
-  }, [data.mode, data.percent]);
-
-  const withSalePrice = data.products.filter((p) => p.has_sale_price).length;
-  const discounted = data.products.filter((p) => p.markdown).length;
-  const percentNumber = Number(percent);
-  const percentValid = percentNumber >= 1 && percentNumber <= data.maxPercent;
-  const changed = choice !== data.mode || (choice === 'bulk' && percentNumber !== data.percent);
-  const canSave = data.isAdmin && changed && !saving && (choice !== 'bulk' || percentValid);
-
-  const action =
-    choice === 'off'
-      ? 'Stop the sale'
-      : choice === 'sale'
-        ? 'Show sale prices'
-        : data.mode === 'bulk'
-          ? `Change to ${percentValid ? percentNumber : '…'}% off`
-          : `Start ${percentValid ? percentNumber : '…'}% off everything`;
-
-  async function save() {
-    setSaving(true);
-    onNotice(null);
-    try {
-      const result = await adminFetch<{ mode: PricingMode; percent: number; message: string }>('/api/admin/sales', {
-        method: 'PUT',
-        body: JSON.stringify({ mode: choice, percent: percentNumber }),
-      });
-      onSaved(result.mode, result.percent);
-      onNotice({ kind: 'ok', text: result.message });
-    } catch (err) {
-      onNotice({ kind: 'error', text: err instanceof Error ? err.message : 'The sale could not be saved.' });
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  const options: { key: PricingMode; title: string; body: React.ReactNode }[] = [
-    {
-      key: 'off',
-      title: 'No sale',
-      body: 'Every product shows its regular price. Discounts on chosen products still apply.',
-    },
-    {
-      key: 'sale',
-      title: 'Sale prices',
-      body: (
-        <>
-          Products with a sale price show it; the rest stay at their regular price.{' '}
-          {withSalePrice > 0 ? (
-            <span className="text-gray-900">{plural(withSalePrice, 'product has', 'products have')} a sale price.</span>
-          ) : (
-            <span className="text-amber-800">
-              No product has a sale price yet. Add one under{' '}
-              <Link href="/admin/products" className="font-semibold underline underline-offset-2">
-                Products
-              </Link>
-              , in Pricing &amp; Inventory.
-            </span>
-          )}
-        </>
-      ),
-    },
-    {
-      key: 'bulk',
-      title: 'Percentage off everything',
-      body: 'One percentage off the regular price of every product. Sale prices and discounts on chosen products are set aside while it runs.',
-    },
-  ];
-
+  const big = size === 'lg';
   return (
-    <section className="max-w-2xl space-y-5" aria-label="Whole-store sale">
-      {!data.isAdmin && (
-        <p className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
-          Only an administrator can start or stop a whole-store sale. You can still discount chosen products.
-        </p>
-      )}
-
-      <fieldset disabled={!data.isAdmin || saving} className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
-        <legend className="sr-only">Choose what runs across the whole store</legend>
-        <div className="divide-y divide-gray-100">
-          {options.map((option) => {
-            const selected = choice === option.key;
-            const running = data.mode === option.key;
-            return (
-              <div key={option.key} className={selected ? 'bg-slate-50' : ''}>
-                <label className={`flex gap-3 p-4 sm:p-5 ${data.isAdmin ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
-                  <input
-                    type="radio"
-                    name="store-sale"
-                    value={option.key}
-                    checked={selected}
-                    onChange={() => setChoice(option.key)}
-                    className="mt-1 h-4 w-4 shrink-0 border-gray-300 accent-slate-700"
-                  />
-                  <span className="min-w-0">
-                    <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                      <span className="font-semibold text-gray-900">{option.title}</span>
-                      {running && (
-                        <span className="rounded-full bg-slate-700 px-2 py-0.5 text-xs font-medium text-white">
-                          {option.key === 'bulk' ? `Running at ${data.percent}%` : option.key === 'off' ? 'Now' : 'Running'}
-                        </span>
-                      )}
-                    </span>
-                    <span className="mt-1 block text-sm text-gray-600">{option.body}</span>
-                  </span>
-                </label>
-
-                {option.key === 'bulk' && selected && (
-                  <div className="space-y-3 px-4 pb-5 pl-11 sm:px-5 sm:pl-12">
-                    <div className="flex flex-wrap gap-2" role="group" aria-label="Common percentages">
-                      {PERCENT_PRESETS.map((n) => (
-                        <button
-                          key={n}
-                          type="button"
-                          aria-pressed={percentNumber === n}
-                          onClick={() => setPercent(String(n))}
-                          className={`min-h-[40px] rounded-lg border px-3.5 text-sm font-semibold tabular-nums transition-colors ${FOCUS} ${
-                            percentNumber === n
-                              ? 'border-slate-700 bg-slate-700 text-white'
-                              : 'border-gray-300 bg-white text-gray-800 hover:border-slate-500'
-                          }`}
-                        >
-                          {n}%
-                        </button>
-                      ))}
-                    </div>
-                    <label className="flex items-center gap-3 text-sm text-gray-700">
-                      <span className="shrink-0">Or type one</span>
-                      <span className="relative w-28">
-                        <input
-                          type="number"
-                          inputMode="decimal"
-                          min={1}
-                          max={data.maxPercent}
-                          step={1}
-                          value={percent}
-                          onChange={(e) => setPercent(e.target.value)}
-                          aria-invalid={!percentValid}
-                          className="w-full rounded-lg border border-gray-300 py-2 pl-3 pr-8 text-base font-semibold tabular-nums focus:border-slate-700 focus:ring-1 focus:ring-slate-700 sm:text-sm"
-                        />
-                        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-500">%</span>
-                      </span>
-                    </label>
-                    {percentValid ? (
-                      <p className="text-sm text-gray-600">
-                        A {cedis(100)} product becomes{' '}
-                        <strong className="whitespace-nowrap tabular-nums text-gray-900">
-                          {cedis(markdownPrice(100, { type: 'percent', value: percentNumber }) ?? 100)}
-                        </strong>
-                        .
-                      </p>
-                    ) : (
-                      <p className="text-sm text-red-700">Enter a percentage between 1 and {data.maxPercent}.</p>
-                    )}
-                    {discounted > 0 && (
-                      <p className="text-sm text-gray-600">
-                        {plural(discounted, 'product has', 'products have')} a discount of{' '}
-                        {discounted === 1 ? 'its' : 'their'} own under{' '}
-                        <button type="button" onClick={showProducts} className={`rounded font-semibold underline underline-offset-2 ${FOCUS}`}>
-                          Chosen products
-                        </button>
-                        . Those pause while this runs, then come back.
-                      </p>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </fieldset>
-
-      {data.isAdmin && (
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            onClick={save}
-            disabled={!canSave}
-            className={`min-h-[44px] rounded-lg bg-slate-700 px-5 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 ${FOCUS}`}
-          >
-            {saving ? 'Saving…' : changed ? action : 'No changes to save'}
-          </button>
-          {changed && !saving && (
-            <button
-              type="button"
-              onClick={() => {
-                setChoice(data.mode);
-                if (data.percent > 0) setPercent(String(data.percent));
-              }}
-              className={`min-h-[44px] rounded-lg px-3 text-sm font-medium text-gray-600 hover:text-gray-900 ${FOCUS}`}
-            >
-              Cancel
-            </button>
-          )}
-        </div>
-      )}
-
-      <p className="text-sm text-gray-500">
-        The website, the POS and checkout all charge by what is set here. Shoppers already on the site see a change within
-        about a minute.
-      </p>
-    </section>
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-busy={pending}
+      aria-label={label}
+      onClick={onClick}
+      disabled={disabled}
+      className={`relative inline-flex flex-shrink-0 items-center rounded-full transition-colors duration-200 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-green-600 focus-visible:ring-offset-2 ${
+        big ? 'h-9 w-16' : 'h-6 w-11'
+      } ${on ? 'bg-green-600' : 'bg-gray-300'} ${pending ? 'opacity-60' : disabled ? 'opacity-50' : ''}`}
+    >
+      <span
+        className={`inline-block transform rounded-full bg-white shadow transition-transform duration-200 ${
+          big ? 'h-7 w-7' : 'h-5 w-5'
+        } ${on ? (big ? 'translate-x-8' : 'translate-x-[22px]') : big ? 'translate-x-1' : 'translate-x-0.5'}`}
+      />
+    </button>
   );
 }
 
-/* ─── Chosen products ─────────────────────────────────────────────────────── */
-
-function PriceCell({ row, preview, paused }: { row: Row; preview: Pick<Markdown, 'type' | 'value'> | null; paused: boolean }) {
-  const from = row.options > 0 && row.low !== row.high ? 'From ' : '';
-  const current = row.markdown && !paused ? markdownPrice(row.low, row.markdown) : null;
-  const next = preview ? markdownPrice(row.low, preview) : null;
-  const nextOnSome = preview && next == null && markdownPrice(row.high, preview) != null;
-
-  return (
-    <span className="block tabular-nums">
-      {current != null ? (
-        <span className="block">
-          <span className="whitespace-nowrap font-semibold text-gray-900">{from}{cedis(current)}</span>{' '}
-          <span className="whitespace-nowrap text-xs text-gray-500 line-through">{cedis(row.low)}</span>
-        </span>
-      ) : (
-        <span className="block font-semibold text-gray-900">{from}{cedis(row.low)}</span>
-      )}
-      {preview && (
-        <span className={`block text-xs font-semibold ${next != null ? 'text-slate-700' : 'text-red-700'}`}>
-          {next != null ? `Becomes ${cedis(next)}` : nextOnSome ? 'Only on the dearer options' : 'More than the price'}
-        </span>
-      )}
-    </span>
-  );
-}
-
-function ChosenProducts({
-  data,
-  reload,
-  onNotice,
-}: {
-  data: SalesData;
-  reload: () => Promise<void>;
-  onNotice: (notice: Notice) => void;
-}) {
-  const [type, setType] = useState<Markdown['type']>('percent');
-  const [value, setValue] = useState('10');
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [category, setCategory] = useState('');
-  const [show, setShow] = useState<'all' | 'discounted'>('all');
-  const [search, setSearch] = useState('');
-  const [limit, setLimit] = useState(ROWS_PER_PAGE);
-  const [busy, setBusy] = useState(false);
-  const [confirmEndAll, setConfirmEndAll] = useState(false);
-
-  const amount = Number(value) || 0;
-  const amountValid = amount > 0 && (type === 'fixed' || amount <= data.maxPercent);
-  const preview = amountValid ? { type, value: amount } : null;
-  const paused = data.mode === 'bulk';
-  const discounted = useMemo(() => data.products.filter((p) => p.markdown), [data.products]);
-
-  const visible = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return data.products.filter(
-      (p) =>
-        (!category || p.category_id === category) &&
-        (show === 'all' || p.markdown) &&
-        (!q || `${p.name} ${p.sku || ''}`.toLowerCase().includes(q))
-    );
-  }, [data.products, category, show, search]);
-
-  useEffect(() => setLimit(ROWS_PER_PAGE), [category, show, search]);
-
-  const allVisibleSelected = visible.length > 0 && visible.every((p) => selected.has(p.id));
-  const filtered = Boolean(category || search.trim() || show !== 'all');
-
-  function toggle(id: string) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
-  function toggleVisible() {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      for (const p of visible) {
-        if (allVisibleSelected) next.delete(p.id);
-        else next.add(p.id);
-      }
-      return next;
-    });
-  }
-
-  async function run(method: 'POST' | 'DELETE', body: Record<string, unknown>) {
-    setBusy(true);
-    onNotice(null);
-    try {
-      const result = await adminFetch<{ message: string }>('/api/admin/sales', { method, body: JSON.stringify(body) });
-      setSelected(new Set());
-      setConfirmEndAll(false);
-      await reload();
-      onNotice({ kind: 'ok', text: result.message });
-    } catch (err) {
-      onNotice({ kind: 'error', text: err instanceof Error ? err.message : 'That did not save. Try again.' });
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const applyLabel = busy
-    ? 'Saving…'
-    : selected.size === 0
-      ? 'Tick products first'
-      : !amountValid
-        ? 'Enter an amount'
-        : `Take ${markdownLabel({ type, value: amount })} ${plural(selected.size, 'product')}`;
-  const canApply = !busy && selected.size > 0 && amountValid;
-  const apply = () => run('POST', { productIds: [...selected], type, value: amount });
-
-  return (
-    <section className="space-y-5" aria-label="Discount chosen products">
-      {paused && (
-        <p className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          <i className="ri-pause-circle-line text-lg leading-none" aria-hidden />
-          <span>
-            {data.percent}% off everything is running, so these discounts are set aside for now. They come back when that
-            sale stops.
-          </span>
-        </p>
-      )}
-
-      <div className="grid gap-5 xl:grid-cols-[20rem_minmax(0,1fr)] xl:items-start">
-        <aside className="space-y-4 rounded-2xl border border-gray-200 bg-white p-5 xl:sticky xl:top-24">
-          <h2 className="font-semibold text-gray-900">How much to take off</h2>
-
-          <div className="grid grid-cols-2 gap-1 rounded-lg bg-gray-100 p-1" role="group" aria-label="Kind of discount">
-            {(
-              [
-                ['percent', 'Percent'],
-                ['fixed', 'Cedis'],
-              ] as const
-            ).map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                aria-pressed={type === key}
-                onClick={() => {
-                  setType(key);
-                  setValue(key === 'percent' ? '10' : '5');
-                }}
-                className={`min-h-[40px] rounded-md text-sm font-semibold transition-colors ${FOCUS} ${
-                  type === key ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          <label className="block">
-            <span className="sr-only">{type === 'percent' ? 'Percentage off' : 'Cedis off'}</span>
-            <span className="relative block">
-              {type === 'fixed' && (
-                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">GH₵</span>
-              )}
-              <input
-                type="number"
-                inputMode="decimal"
-                min={0}
-                step={type === 'percent' ? 1 : 0.5}
-                value={value}
-                onChange={(e) => setValue(e.target.value)}
-                aria-invalid={!amountValid}
-                className={`w-full rounded-lg border border-gray-300 py-2.5 text-lg font-semibold tabular-nums focus:border-slate-700 focus:ring-1 focus:ring-slate-700 ${
-                  type === 'fixed' ? 'pl-14 pr-3' : 'pl-3 pr-9'
-                }`}
-              />
-              {type === 'percent' && (
-                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-500">%</span>
-              )}
-            </span>
-          </label>
-          {type === 'percent' && amount > data.maxPercent && (
-            <p className="text-sm text-red-700">Keep the percentage at {data.maxPercent} or below.</p>
-          )}
-
-          <div className="flex flex-wrap gap-2" role="group" aria-label="Common amounts">
-            {(type === 'percent' ? PERCENT_PRESETS : AMOUNT_PRESETS).map((n) => (
-              <button
-                key={n}
-                type="button"
-                aria-pressed={amount === n}
-                onClick={() => setValue(String(n))}
-                className={`min-h-[36px] rounded-lg border px-3 text-sm font-semibold tabular-nums transition-colors ${FOCUS} ${
-                  amount === n ? 'border-slate-700 bg-slate-700 text-white' : 'border-gray-300 bg-white text-gray-800 hover:border-slate-500'
-                }`}
-              >
-                {type === 'percent' ? `${n}%` : `GH₵${n}`}
-              </button>
-            ))}
-          </div>
-
-          <button
-            type="button"
-            disabled={!canApply}
-            onClick={apply}
-            className={`hidden min-h-[44px] w-full rounded-lg bg-slate-700 px-4 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 xl:block ${FOCUS}`}
-          >
-            {applyLabel}
-          </button>
-          <p className="text-sm text-gray-500">
-            A new discount replaces the old one on a product. They never add up, and ending one brings the regular price
-            back exactly.
-          </p>
-
-          <div className="border-t border-gray-100 pt-4">
-            <p className="text-sm text-gray-600">
-              Discounted now: <strong className="whitespace-nowrap tabular-nums text-gray-900">{discounted.length}</strong>
-            </p>
-            {discounted.length > 0 &&
-              (confirmEndAll ? (
-                <div className="mt-3 space-y-2">
-                  <p className="text-sm text-gray-900">End the discount on all {plural(discounted.length, 'product')}?</p>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => run('DELETE', { all: true })}
-                      className={`min-h-[40px] flex-1 rounded-lg bg-gray-900 px-3 text-sm font-semibold text-white hover:bg-black disabled:opacity-50 ${FOCUS}`}
-                    >
-                      {busy ? 'Ending…' : 'Yes, end all'}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => setConfirmEndAll(false)}
-                      className={`min-h-[40px] flex-1 rounded-lg border border-gray-300 px-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 ${FOCUS}`}
-                    >
-                      Keep them
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => setConfirmEndAll(true)}
-                  className={`mt-3 min-h-[40px] w-full rounded-lg border border-gray-300 px-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50 ${FOCUS}`}
-                >
-                  End all discounts
-                </button>
-              ))}
-          </div>
-        </aside>
-
-        <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
-          <div className="space-y-3 border-b border-gray-100 p-4">
-            <label className="flex min-h-[40px] shrink-0 items-center gap-2.5 text-sm font-medium text-gray-700">
-              <input
-                type="checkbox"
-                checked={allVisibleSelected}
-                onChange={toggleVisible}
-                disabled={visible.length === 0}
-                className="h-4 w-4 rounded border-gray-300 accent-slate-700"
-              />
-              {allVisibleSelected ? 'Untick all' : `Tick all ${visible.length.toLocaleString('en-GH')}`}
-              {selected.size > 0 && <span className="font-normal text-gray-500">· {selected.size} ticked</span>}
-            </label>
-            <div className="flex flex-wrap gap-2">
-              <select
-                value={show}
-                onChange={(e) => setShow(e.target.value as 'all' | 'discounted')}
-                aria-label="Which products to list"
-                className="min-h-[40px] min-w-[10rem] flex-1 rounded-lg border border-gray-300 px-3 text-base text-gray-800 focus:border-slate-700 focus:ring-1 focus:ring-slate-700 sm:text-sm"
-              >
-                <option value="all">All products</option>
-                <option value="discounted">Discounted only</option>
-              </select>
-              <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                aria-label="Category"
-                className="min-h-[40px] min-w-[10rem] flex-1 rounded-lg border border-gray-300 px-3 text-base text-gray-800 focus:border-slate-700 focus:ring-1 focus:ring-slate-700 sm:text-sm"
-              >
-                <option value="">All categories</option>
-                {data.categories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-              <input
-                type="search"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search name or SKU"
-                aria-label="Search products"
-                className="min-h-[40px] min-w-[12rem] flex-[2] rounded-lg border border-gray-300 px-3 text-base text-gray-900 placeholder:text-gray-500 focus:border-slate-700 focus:ring-1 focus:ring-slate-700 sm:text-sm"
-              />
-            </div>
-          </div>
-
-          {data.products.length === 0 ? (
-            <div className="p-10 text-center">
-              <p className="font-medium text-gray-900">There are no products to discount yet.</p>
-              <Link href="/admin/products/new" className={`mt-2 inline-block rounded text-sm font-semibold text-slate-700 underline underline-offset-2 ${FOCUS}`}>
-                Add your first product
-              </Link>
-            </div>
-          ) : visible.length === 0 ? (
-            <div className="p-10 text-center">
-              <p className="font-medium text-gray-900">
-                {show === 'discounted' && !category && !search.trim() ? 'No product is discounted right now.' : 'No products match.'}
-              </p>
-              {filtered && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCategory('');
-                    setSearch('');
-                    setShow('all');
-                  }}
-                  className={`mt-2 rounded text-sm font-semibold text-slate-700 underline underline-offset-2 ${FOCUS}`}
-                >
-                  Show all products
-                </button>
-              )}
-            </div>
-          ) : (
-            <>
-              <ul className="divide-y divide-gray-100">
-                {visible.slice(0, limit).map((p) => {
-                  const ticked = selected.has(p.id);
-                  const details = [p.category, p.options ? plural(p.options, 'option') : null, p.status !== 'active' ? 'Draft' : null]
-                    .filter(Boolean)
-                    .join(' · ');
-                  return (
-                    <li key={p.id} className={`flex items-center gap-3 px-4 py-3 ${ticked ? 'bg-slate-50' : ''}`}>
-                      <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-3">
-                        <input
-                          type="checkbox"
-                          checked={ticked}
-                          onChange={() => toggle(p.id)}
-                          className="h-4 w-4 shrink-0 rounded border-gray-300 accent-slate-700"
-                        />
-                        <span className="h-11 w-11 shrink-0 overflow-hidden rounded-lg bg-gray-100">
-                          {p.image && (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={storageImageUrl(p.image, { width: 96, height: 96 })}
-                              alt=""
-                              loading="lazy"
-                              onError={(e) => {
-                                e.currentTarget.style.display = 'none';
-                              }}
-                              className="h-full w-full object-cover"
-                            />
-                          )}
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block font-medium text-gray-900 line-clamp-2">{p.name}</span>
-                          {details && <span className="block truncate text-xs text-gray-500">{details}</span>}
-                          <span className="mt-1 block text-sm">
-                            <PriceCell row={p} preview={ticked ? preview : null} paused={paused} />
-                          </span>
-                        </span>
-                      </label>
-                      <div className="flex w-[5.5rem] shrink-0 flex-col items-end gap-1">
-                        {p.markdown ? (
-                          <>
-                            <span className="rounded-full bg-slate-700 px-2.5 py-0.5 text-xs font-semibold text-white">
-                              {markdownLabel(p.markdown)}
-                            </span>
-                            <button
-                              type="button"
-                              disabled={busy}
-                              onClick={() => run('DELETE', { productIds: [p.id] })}
-                              aria-label={`End the discount on ${p.name}`}
-                              className={`min-h-[32px] rounded px-1 text-xs font-semibold text-gray-600 underline underline-offset-2 hover:text-gray-900 disabled:opacity-50 ${FOCUS}`}
-                            >
-                              End
-                            </button>
-                          </>
-                        ) : (
-                          <span className="text-xs text-gray-500">Full price</span>
-                        )}
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-              {visible.length > limit && (
-                <div className="border-t border-gray-100 p-4 text-center">
-                  <button
-                    type="button"
-                    onClick={() => setLimit((n) => n + ROWS_PER_PAGE * 2)}
-                    className={`min-h-[40px] rounded-lg border border-gray-300 px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50 ${FOCUS}`}
-                  >
-                    Show more ({(visible.length - limit).toLocaleString('en-GH')} left)
-                  </button>
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* On a phone the amount box scrolls away, so the action stays at the bottom of the screen. */}
-      {selected.size > 0 && (
-        <div className="sticky bottom-0 z-10 -mx-4 border-t border-gray-200 bg-white px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:-mx-6 lg:px-6 xl:hidden">
-          <button
-            type="button"
-            disabled={!canApply}
-            onClick={apply}
-            className={`min-h-[48px] w-full rounded-lg bg-slate-700 px-4 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 ${FOCUS}`}
-          >
-            {applyLabel}
-          </button>
-        </div>
-      )}
-    </section>
-  );
-}
-
-/* ─── Page ────────────────────────────────────────────────────────────────── */
-
-function LoadingRows() {
-  return (
-    <div className="max-w-2xl overflow-hidden rounded-2xl border border-gray-200 bg-white" aria-hidden>
-      {[0, 1, 2].map((i) => (
-        <div key={i} className="flex animate-pulse gap-3 border-b border-gray-100 p-5 last:border-b-0">
-          <div className="mt-1 h-4 w-4 rounded-full bg-gray-200" />
-          <div className="flex-1 space-y-2">
-            <div className="h-4 w-40 rounded bg-gray-200" />
-            <div className="h-3 w-full max-w-md rounded bg-gray-100" />
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function SaleAndDiscounts() {
-  const router = useRouter();
-  const pathname = usePathname();
-  const tab = useSearchParams().get('tab') === 'products' ? 'products' : 'store';
-  const showTab = useCallback(
-    (key: 'store' | 'products') => router.replace(key === 'store' ? pathname : `${pathname}?tab=${key}`, { scroll: false }),
-    [router, pathname]
-  );
-
-  const [data, setData] = useState<SalesData | null>(null);
+export default function AdminSalesPage() {
+  const [products, setProducts] = useState<ProductRow[]>([]);
+  const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
-  const [notice, setNotice] = useState<Notice>(null);
+  const [salesActive, setSalesActive] = useState(true);
+
+  const [search, setSearch] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [saleFilter, setSaleFilter] = useState<SaleFilter>('all');
+  const [page, setPage] = useState(1);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  const [bulkPercent, setBulkPercent] = useState('');
+  const [bulkFixed, setBulkFixed] = useState('');
+  const [rowPrice, setRowPrice] = useState<Record<string, string>>({});
+
+  // "Variant prices" editor: one product's options, opened under its row.
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [variantData, setVariantData] = useState<Record<string, VariantRow[]>>({});
+  const [variantLoading, setVariantLoading] = useState(false);
+  const [variantInputs, setVariantInputs] = useState<Record<string, string>>({});
+  const [variantFillAll, setVariantFillAll] = useState('');
+
+  const [busy, setBusy] = useState(false);
+  const [togglingActive, setTogglingActive] = useState(false);
+  // A row's switch while its request is running: shows the new position at once.
+  const [switching, setSwitching] = useState<{ id: string; to: boolean } | null>(null);
+  const [toast, setToast] = useState<{ text: string; ok: boolean } | null>(null);
 
   const load = useCallback(async () => {
     try {
-      setData(await adminFetch<SalesData>('/api/admin/sales'));
+      const data = await adminFetch<{ salesActive: boolean; products: ProductRow[] }>('/api/admin/sales');
+      setProducts(data.products);
+      setSalesActive(data.salesActive);
       setLoadError('');
     } catch (err) {
-      setLoadError(err instanceof Error ? err.message : 'Could not load this page.');
+      setLoadError(err instanceof Error ? err.message : 'Failed to load products');
+    } finally {
+      setLoading(false);
     }
   }, []);
 
@@ -729,117 +114,812 @@ function SaleAndDiscounts() {
     load();
   }, [load]);
 
-  const discountedCount = data ? data.products.filter((p) => p.markdown).length : 0;
-  const running = !data
-    ? ''
-    : data.mode === 'bulk'
-      ? `${data.percent}% off everything is running.`
-      : data.mode === 'sale'
-        ? 'Sale prices are showing.'
-        : discountedCount > 0
-          ? `No whole-store sale. ${plural(discountedCount, 'product is', 'products are')} discounted.`
-          : 'Nothing is running. Every product is at its regular price.';
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 6000);
+    return () => clearTimeout(t);
+  }, [toast]);
 
-  const tabs = [
-    { key: 'store' as const, label: 'Whole store', hint: 'Sale prices, or one percentage off everything' },
-    { key: 'products' as const, label: 'Chosen products', hint: 'Discount only the products you tick' },
-  ];
+  const categories = useMemo(() => Array.from(new Set(products.map((p) => p.category))).sort(), [products]);
+
+  const filtered = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return products.filter((p) => {
+      if (term && !p.name.toLowerCase().includes(term)) return false;
+      if (categoryFilter && p.category !== categoryFilter) return false;
+      if (saleFilter === 'on' && !p.hasSale) return false;
+      if (saleFilter === 'live' && !p.live) return false;
+      if (saleFilter === 'paused' && !isPaused(p)) return false;
+      if (saleFilter === 'off' && p.hasSale) return false;
+      return true;
+    });
+  }, [products, search, categoryFilter, saleFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pageRows = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, categoryFilter, saleFilter]);
+
+  const onSaleCount = useMemo(() => products.filter((p) => p.hasSale).length, [products]);
+  const liveCount = useMemo(() => products.filter((p) => p.live).length, [products]);
+  const pausedCount = onSaleCount - liveCount;
+  const allFilteredSelected = filtered.length > 0 && filtered.every((p) => selected.has(p.id));
+
+  const toggleSelectAllFiltered = () => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      filtered.forEach((p) => (allFilteredSelected ? next.delete(p.id) : next.add(p.id)));
+      return next;
+    });
+  };
+
+  const toggleOne = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const callApi = (payload: Record<string, unknown>) =>
+    adminFetch<any>('/api/admin/sales', { method: 'POST', body: JSON.stringify(payload) });
+
+  const fail = (err: unknown, fallback: string) =>
+    setToast({ text: err instanceof Error ? err.message : fallback, ok: false });
+
+  /** Put the server's updated rows into the table. */
+  const mergeRows = (rows: ProductRow[] | undefined) => {
+    if (!rows?.length) return;
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    setProducts((prev) => prev.map((p) => byId.get(p.id) || p));
+  };
+
+  /** Variant prices may have changed on the server: reload them the next time a row is opened. */
+  const forgetVariants = (id?: string) => {
+    setVariantData((prev) => {
+      if (!id) return {};
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    if (!id || expandedId === id) setExpandedId(null);
+  };
+
+  /** Extra toast text when a change left sales switched off. */
+  const pausedNote = (json: any) => {
+    if (!json?.paused) return '';
+    return salesActive
+      ? ' Sales that were switched off stay off.'
+      : ' All sales are off, so new sale prices start switched off. Use the Live switch to turn one on.';
+  };
+
+  const toggleSalesActive = async () => {
+    const next = !salesActive;
+    const question = next
+      ? 'Turn ON all sales? Every switched-off sale goes live, including products you switched off one by one.'
+      : 'Turn OFF all sales? Every product goes back to its normal price, including products you switched on one by one. Each sale price is kept and returns when you switch it back on.';
+    if (!confirm(question)) return;
+    setTogglingActive(true);
+    try {
+      await callApi({ action: 'set_active', active: next });
+      setSalesActive(next);
+      forgetVariants();
+      await load();
+      setToast({
+        text: next ? 'All sales are ON. Every sale price is live.' : 'All sales are OFF. Every product is at its normal price.',
+        ok: true,
+      });
+    } catch (err) {
+      fail(err, 'Failed to switch sales');
+    } finally {
+      setTogglingActive(false);
+    }
+  };
+
+  /** Switch one product's sale on or off. */
+  const toggleProductSale = async (p: ProductRow) => {
+    if (switching) return;
+    const next = !p.live;
+    setSwitching({ id: p.id, to: next });
+    try {
+      const json = await callApi({ action: 'set_product_active', active: next, productIds: [p.id] });
+      mergeRows(json?.products);
+      forgetVariants(p.id);
+      setToast({ text: next ? `${p.name}: sale is on.` : `${p.name}: sale is off. It shows the normal price.`, ok: true });
+    } catch (err) {
+      fail(err, 'Could not switch the sale');
+    } finally {
+      setSwitching(null);
+    }
+  };
+
+  const needSelection = () => {
+    if (selected.size > 0) return false;
+    setToast({ text: 'Select at least one product first', ok: false });
+    return true;
+  };
+
+  /** Switch the selected products' sales on or off. */
+  const switchSelected = async (active: boolean) => {
+    if (needSelection()) return;
+    setBusy(true);
+    try {
+      const json = await callApi({ action: 'set_product_active', active, productIds: Array.from(selected) });
+      mergeRows(json?.products);
+      const changed = json?.changed ?? 0;
+      setToast({ text: `Switched ${active ? 'on' : 'off'} ${plural(changed, 'sale')}.`, ok: true });
+      setSelected(new Set());
+      forgetVariants();
+    } catch (err) {
+      fail(err, 'Action failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runBulk = async (kind: 'percentage' | 'fixed' | 'remove') => {
+    if (needSelection()) return;
+    const ids = Array.from(selected);
+    let payload: Record<string, unknown> = { action: 'remove', productIds: ids };
+    if (kind === 'percentage') {
+      const value = Number(bulkPercent);
+      if (!Number.isFinite(value) || value < 1 || value > 99) {
+        setToast({ text: 'Enter a discount between 1 and 99%', ok: false });
+        return;
+      }
+      payload = { action: 'apply', mode: 'percentage', value, productIds: ids };
+    } else if (kind === 'fixed') {
+      const value = Number(bulkFixed);
+      if (!Number.isFinite(value) || value <= 0) {
+        setToast({ text: 'Enter a valid sale price', ok: false });
+        return;
+      }
+      payload = { action: 'apply', mode: 'fixed', value, productIds: ids };
+    } else if (!confirm(`Remove ${plural(ids.length, 'product')} from sale? They go back to their regular price.`)) {
+      return;
+    }
+    setBusy(true);
+    try {
+      const json = await callApi(payload);
+      mergeRows(json?.products);
+      const changed = json?.changed ?? 0;
+      const skipped = json?.skipped ?? 0;
+      if (kind === 'remove') {
+        setToast({ text: `Removed ${plural(changed, 'product')} from sale.`, ok: true });
+      } else if (kind === 'percentage') {
+        setToast({ text: `Applied ${bulkPercent}% off to ${plural(changed, 'product')}.` + pausedNote(json), ok: true });
+      } else {
+        setToast({
+          text:
+            (skipped
+              ? `Set sale price on ${plural(changed, 'product')}. ${skipped} skipped (products with variants, or the price is not below the regular price).`
+              : `Set sale price on ${plural(changed, 'product')}.`) + pausedNote(json),
+          ok: changed > 0,
+        });
+      }
+      setSelected(new Set());
+      setBulkPercent('');
+      setBulkFixed('');
+      forgetVariants();
+    } catch (err) {
+      fail(err, 'Failed to update sales');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const applyRowPrice = async (p: ProductRow) => {
+    const value = Number(rowPrice[p.id]);
+    if (!Number.isFinite(value) || value <= 0) {
+      setToast({ text: 'Enter a valid sale price', ok: false });
+      return;
+    }
+    if (value >= p.regular) {
+      setToast({ text: `Sale price must be below the regular price (${fmt(p.regular)})`, ok: false });
+      return;
+    }
+    setBusy(true);
+    try {
+      const json = await callApi({ action: 'apply', mode: 'fixed', value, productIds: [p.id] });
+      mergeRows(json?.products);
+      setRowPrice((prev) => ({ ...prev, [p.id]: '' }));
+      setToast({ text: `${p.name} is on sale at ${fmt(value)}.` + pausedNote(json), ok: true });
+    } catch (err) {
+      fail(err, 'Failed to set the sale price');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const removeRow = async (p: ProductRow) => {
+    setBusy(true);
+    try {
+      const json = await callApi({ action: 'remove', productIds: [p.id] });
+      mergeRows(json?.products);
+      forgetVariants(p.id);
+      setToast({ text: `${p.name} is back at its regular price.`, ok: true });
+    } catch (err) {
+      fail(err, 'Failed to remove the sale');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** Open a product's options under its row, loading them the first time. */
+  const toggleVariants = async (p: ProductRow) => {
+    if (expandedId === p.id) {
+      setExpandedId(null);
+      return;
+    }
+    setExpandedId(p.id);
+    setVariantFillAll('');
+    setVariantInputs({});
+    if (variantData[p.id]) return;
+    setVariantLoading(true);
+    try {
+      const json = await adminFetch<{ variants: VariantRow[] }>(`/api/admin/sales?variants=${p.id}`);
+      setVariantData((prev) => ({ ...prev, [p.id]: json.variants }));
+    } catch (err) {
+      fail(err, 'Could not load the variants');
+      setExpandedId(null);
+    } finally {
+      setVariantLoading(false);
+    }
+  };
+
+  /** Apply the typed sale prices for one product's options. */
+  const applyVariantPrices = async (p: ProductRow) => {
+    const items: { variantId: string; price: number }[] = [];
+    for (const v of variantData[p.id] || []) {
+      const raw = variantInputs[v.id];
+      if (raw == null || raw.trim() === '') continue;
+      const value = Number(raw);
+      if (!Number.isFinite(value) || value <= 0) {
+        setToast({ text: `Enter a valid sale price for "${v.label}"`, ok: false });
+        return;
+      }
+      if (value >= v.regular) {
+        setToast({ text: `Sale price for "${v.label}" must be below its regular price (${fmt(v.regular)})`, ok: false });
+        return;
+      }
+      items.push({ variantId: v.id, price: Math.round(value * 100) / 100 });
+    }
+    if (items.length === 0) {
+      setToast({ text: 'Type a sale price for at least one variant', ok: false });
+      return;
+    }
+    setBusy(true);
+    try {
+      const json = await callApi({ action: 'variant_prices', productId: p.id, items });
+      mergeRows(json?.products);
+      forgetVariants(p.id);
+      setVariantInputs({});
+      setToast({ text: `Set sale prices on ${plural(json?.updated ?? items.length, 'variant')} of ${p.name}.` + pausedNote(json), ok: true });
+    } catch (err) {
+      fail(err, 'Failed to set variant sale prices');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** Fill every option's box with the same percentage off its own regular price. */
+  const fillAllVariants = (p: ProductRow) => {
+    const pct = Number(variantFillAll);
+    if (!Number.isFinite(pct) || pct < 1 || pct > 99) {
+      setToast({ text: 'Enter a discount between 1 and 99%', ok: false });
+      return;
+    }
+    const next: Record<string, string> = {};
+    for (const v of variantData[p.id] || []) next[v.id] = (Math.round(v.regular * (1 - pct / 100) * 100) / 100).toFixed(2);
+    setVariantInputs(next);
+  };
+
+  const input = 'px-3 py-2 border border-gray-300 rounded-lg text-base sm:text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500';
+  const noneSelected = selected.size === 0;
 
   return (
-    <div className="max-w-6xl space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900">Sale &amp; Discounts</h1>
-        <p className="mt-1 text-gray-600">
-          Shoppers see the old price crossed out next to the new one. Ending a sale brings every price back exactly.
-        </p>
-        {running && (
-          <p className="mt-3 flex items-center gap-2 text-sm font-medium text-gray-900">
-            <span
-              className={`h-2 w-2 rounded-full ${data!.mode !== 'off' || discountedCount > 0 ? 'bg-green-600' : 'bg-gray-400'}`}
-              aria-hidden
-            />
-            {running}
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Sales</h1>
+          <p className="text-gray-600 mt-1">
+            Set a discount % or a sale price, then switch each sale on or off, or all of them at once.
           </p>
-        )}
+        </div>
+        <Link
+          href="/sale"
+          target="_blank"
+          className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 inline-flex items-center gap-2 text-sm font-medium self-start whitespace-nowrap"
+        >
+          <i className="ri-external-link-line" aria-hidden></i>
+          View Sale page
+        </Link>
       </div>
 
-      <div className="grid max-w-2xl grid-cols-2 gap-1 rounded-xl bg-gray-100 p-1" role="tablist" aria-label="Where the discount applies">
-        {tabs.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            role="tab"
-            id={`sales-tab-${t.key}`}
-            aria-selected={tab === t.key}
-            aria-controls="sales-panel"
-            onClick={() => showTab(t.key)}
-            className={`rounded-lg px-3 py-2.5 text-left transition-colors ${FOCUS} ${
-              tab === t.key ? 'bg-white shadow-sm' : 'hover:bg-gray-50'
-            }`}
-          >
-            <span className={`block text-sm font-semibold ${tab === t.key ? 'text-gray-900' : 'text-gray-700'}`}>
-              {t.label}
-              {t.key === 'products' && discountedCount > 0 && (
-                <span className="ml-1.5 rounded-full bg-slate-700 px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-white">
-                  {discountedCount}
-                </span>
-              )}
-            </span>
-            <span className="mt-0.5 hidden text-xs text-gray-600 sm:block">{t.hint}</span>
-          </button>
+      {/* Master on/off switch */}
+      <div
+        className={`rounded-xl border p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
+          salesActive ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'
+        }`}
+      >
+        <div className="flex items-start gap-3">
+          <i
+            className={`text-2xl mt-0.5 ${salesActive ? 'ri-flashlight-fill text-green-600' : 'ri-pause-circle-line text-amber-600'}`}
+            aria-hidden
+          ></i>
+          <div>
+            <p className="font-semibold text-gray-900">
+              All sales: {salesActive ? 'ON' : 'OFF'}
+              <span className="ml-2 text-sm font-normal text-gray-600">
+                {liveCount} live{pausedCount > 0 ? `, ${pausedCount} switched off` : ''}
+              </span>
+            </p>
+            <p className="text-sm text-gray-600 mt-0.5 max-w-xl">
+              {salesActive
+                ? 'This switch turns every sale on or off at once. To switch one product, use its Live switch in the table.'
+                : 'Every sale is off. You can still switch on single products with their Live switch in the table, or turn every sale back on here.'}
+            </p>
+          </div>
+        </div>
+        <Switch
+          size="lg"
+          on={salesActive}
+          onClick={toggleSalesActive}
+          disabled={togglingActive || busy || loading}
+          pending={togglingActive}
+          label="Turn all sales on or off"
+        />
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        {[
+          ['Total products', products.length, 'text-gray-900'],
+          ['Sale live', liveCount, 'text-red-600'],
+          ['Sale switched off', pausedCount, 'text-amber-600'],
+          ['Not on sale', products.length - onSaleCount, 'text-gray-900'],
+        ].map(([label, value, color]) => (
+          <div key={label as string} className="bg-white rounded-xl border border-gray-200 p-4">
+            <p className="text-sm text-gray-500">{label}</p>
+            <p className={`text-2xl font-bold tabular-nums ${color}`}>{loading ? '–' : value}</p>
+          </div>
         ))}
       </div>
 
+      {/* Filters */}
+      <div className="bg-white rounded-xl border border-gray-200 p-4 flex flex-col md:flex-row gap-3 md:items-center">
+        <div className="relative flex-1">
+          <i className="ri-search-line absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" aria-hidden></i>
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search products by name…"
+            aria-label="Search products by name"
+            className={`w-full pl-10 pr-4 py-2.5 ${input}`}
+          />
+        </div>
+        <select
+          value={categoryFilter}
+          onChange={(e) => setCategoryFilter(e.target.value)}
+          aria-label="Category"
+          className={`py-2.5 ${input}`}
+        >
+          <option value="">All categories</option>
+          {categories.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+        <select
+          value={saleFilter}
+          onChange={(e) => setSaleFilter(e.target.value as SaleFilter)}
+          aria-label="Which products to show"
+          className={`py-2.5 ${input}`}
+        >
+          <option value="all">All products</option>
+          <option value="on">On sale</option>
+          <option value="live">Sale live</option>
+          <option value="paused">Sale switched off</option>
+          <option value="off">Not on sale</option>
+        </select>
+      </div>
+
+      {/* Bulk action bar */}
+      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 sticky top-2 z-20">
+        <div className="flex flex-col lg:flex-row lg:items-center gap-3">
+          <label className="flex items-center gap-2 lg:w-56 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={allFilteredSelected}
+              onChange={toggleSelectAllFiltered}
+              disabled={filtered.length === 0}
+              className="w-4 h-4 rounded border-gray-300"
+            />
+            <span className="text-sm font-medium text-gray-700">
+              {selected.size > 0 ? `${selected.size} selected` : `Select all ${filtered.length} filtered`}
+            </span>
+          </label>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1">
+              <input
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={99}
+                value={bulkPercent}
+                onChange={(e) => setBulkPercent(e.target.value)}
+                placeholder="%"
+                aria-label="Percent off"
+                className={`w-20 ${input}`}
+              />
+              <button
+                onClick={() => runBulk('percentage')}
+                disabled={busy || noneSelected}
+                className="px-4 py-2 bg-blue-700 hover:bg-blue-800 text-white rounded-lg text-sm font-semibold disabled:opacity-50"
+              >
+                Apply % off
+              </button>
+            </div>
+            <div className="flex items-center gap-1">
+              <input
+                type="number"
+                inputMode="decimal"
+                min={0}
+                step="0.01"
+                value={bulkFixed}
+                onChange={(e) => setBulkFixed(e.target.value)}
+                placeholder="₵ price"
+                aria-label="Sale price in cedis"
+                className={`w-28 ${input}`}
+              />
+              <button
+                onClick={() => runBulk('fixed')}
+                disabled={busy || noneSelected}
+                className="px-4 py-2 bg-blue-700 hover:bg-blue-800 text-white rounded-lg text-sm font-semibold disabled:opacity-50"
+              >
+                Set price
+              </button>
+            </div>
+            <button
+              onClick={() => switchSelected(true)}
+              disabled={busy || noneSelected}
+              className="px-4 py-2 bg-white border border-green-300 text-green-800 hover:bg-green-50 rounded-lg text-sm font-semibold disabled:opacity-50"
+            >
+              Switch on
+            </button>
+            <button
+              onClick={() => switchSelected(false)}
+              disabled={busy || noneSelected}
+              className="px-4 py-2 bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-lg text-sm font-semibold disabled:opacity-50"
+            >
+              Switch off
+            </button>
+            <button
+              onClick={() => runBulk('remove')}
+              disabled={busy || noneSelected}
+              className="px-4 py-2 bg-white border border-red-300 text-red-700 hover:bg-red-50 rounded-lg text-sm font-semibold disabled:opacity-50"
+            >
+              Remove from sale
+            </button>
+          </div>
+        </div>
+        <p className="text-xs text-gray-600 mt-2">
+          Fixed price applies only to products without variants and must be below the regular price. For variant products
+          use a percentage, or click &quot;Variant prices&quot; on the row to set each variant&apos;s own sale price.
+        </p>
+      </div>
+
       <div aria-live="polite">
-        {notice && (
+        {toast && (
           <div
-            className={`flex items-start gap-2 rounded-lg border p-4 text-sm ${
-              notice.kind === 'ok' ? 'border-green-100 bg-green-50 text-green-800' : 'border-red-100 bg-red-50 text-red-800'
+            className={`rounded-lg px-4 py-3 text-sm ${
+              toast.ok ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'
             }`}
           >
-            <i className={`${notice.kind === 'ok' ? 'ri-checkbox-circle-fill text-green-600' : 'ri-error-warning-fill text-red-600'} text-lg leading-none`} aria-hidden />
-            <span className="flex-1">{notice.text}</span>
-            <button type="button" onClick={() => setNotice(null)} aria-label="Dismiss" className={`rounded ${FOCUS}`}>
-              <i className="ri-close-line text-lg leading-none" aria-hidden />
-            </button>
+            {toast.text}
           </div>
         )}
       </div>
 
-      <div id="sales-panel" role="tabpanel" aria-labelledby={`sales-tab-${tab}`}>
-        {loadError && !data ? (
-          <div className="max-w-2xl rounded-2xl border border-red-100 bg-red-50 p-5 text-sm text-red-800">
-            <p className="font-semibold">This page could not load.</p>
-            <p className="mt-1">{loadError}</p>
+      {/* Table */}
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        {loading ? (
+          <div className="p-12 text-center text-gray-500">
+            <i className="ri-loader-4-line text-3xl animate-spin block mb-2" aria-hidden></i>
+            Loading products…
+          </div>
+        ) : loadError ? (
+          <div className="p-12 text-center">
+            <p className="font-medium text-gray-900">The products could not load.</p>
+            <p className="text-sm text-gray-600 mt-1">{loadError}</p>
             <button
-              type="button"
-              onClick={load}
-              className={`mt-3 min-h-[40px] rounded-lg bg-white px-4 text-sm font-semibold text-red-800 ring-1 ring-red-200 hover:bg-red-100 ${FOCUS}`}
+              onClick={() => {
+                setLoading(true);
+                load();
+              }}
+              className="mt-4 px-4 py-2 border border-gray-300 rounded-lg text-sm font-semibold hover:bg-gray-50"
             >
               Try again
             </button>
           </div>
-        ) : !data ? (
-          <LoadingRows />
-        ) : tab === 'store' ? (
-          <WholeStore
-            data={data}
-            onNotice={setNotice}
-            showProducts={() => showTab('products')}
-            onSaved={(mode, percent) => setData((prev) => (prev ? { ...prev, mode, percent } : prev))}
-          />
+        ) : products.length === 0 ? (
+          <div className="p-12 text-center text-gray-600">
+            There are no products yet.{' '}
+            <Link href="/admin/products/new" className="font-semibold text-blue-700 underline">
+              Add your first product
+            </Link>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="p-12 text-center text-gray-500">No products match your filters.</div>
         ) : (
-          <ChosenProducts data={data} reload={load} onNotice={setNotice} />
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 text-left border-b border-gray-200">
+                  <th className="p-3 w-10"></th>
+                  <th className="p-3 font-semibold">Product</th>
+                  <th className="p-3 font-semibold">Regular</th>
+                  <th className="p-3 font-semibold">Sale price</th>
+                  <th className="p-3 font-semibold">Off</th>
+                  <th className="p-3 font-semibold">Live</th>
+                  <th className="p-3 font-semibold">Set price</th>
+                  <th className="p-3 font-semibold"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {pageRows.map((p) => {
+                  const pending = switching?.id === p.id;
+                  const from = p.variantsCount > 0 ? 'From ' : '';
+                  return (
+                    <Fragment key={p.id}>
+                      <tr className="border-b border-gray-100 hover:bg-gray-50/70">
+                        <td className="p-3">
+                          <input
+                            type="checkbox"
+                            checked={selected.has(p.id)}
+                            onChange={() => toggleOne(p.id)}
+                            aria-label={`Select ${p.name}`}
+                            className="w-4 h-4 rounded border-gray-300"
+                          />
+                        </td>
+                        <td className="p-3">
+                          <div className="flex items-center gap-3">
+                            <span className="w-10 h-10 rounded bg-gray-100 flex-shrink-0 overflow-hidden">
+                              {p.image && (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={storageImageUrl(p.image, { width: 96, height: 96 })}
+                                  alt=""
+                                  loading="lazy"
+                                  onError={(e) => {
+                                    e.currentTarget.style.display = 'none';
+                                  }}
+                                  className="w-full h-full object-cover"
+                                />
+                              )}
+                            </span>
+                            <div className="min-w-0">
+                              <div className="font-medium text-gray-900 truncate max-w-[260px]">{p.name}</div>
+                              <div className="text-xs text-gray-500 flex items-center gap-2">
+                                <span>{p.category}</span>
+                                {p.variantsCount > 0 && (
+                                  <span className="px-1.5 py-0.5 bg-gray-100 rounded text-gray-600">{p.variantsCount} variants</span>
+                                )}
+                                {p.status !== 'active' && (
+                                  <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded">{p.status}</span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="p-3 whitespace-nowrap text-gray-700 tabular-nums">
+                          {from}
+                          {fmt(p.regular)}
+                        </td>
+                        <td className="p-3 whitespace-nowrap tabular-nums">
+                          {p.sale != null ? (
+                            <span className="font-semibold text-red-600">
+                              {from}
+                              {fmt(p.sale)}
+                              {isPaused(p) && <span className="ml-1 text-xs font-normal text-amber-700">(off)</span>}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400">—</span>
+                          )}
+                        </td>
+                        <td className="p-3 whitespace-nowrap">
+                          {p.percentOff > 0 ? (
+                            <span className="inline-block px-2 py-0.5 bg-red-50 text-red-700 rounded text-xs font-bold">-{p.percentOff}%</span>
+                          ) : (
+                            <span className="text-gray-400">—</span>
+                          )}
+                        </td>
+                        <td className="p-3">
+                          {p.hasSale ? (
+                            <Switch
+                              on={pending ? switching!.to : p.live}
+                              pending={pending}
+                              onClick={() => toggleProductSale(p)}
+                              disabled={busy || togglingActive || !!switching}
+                              label={`Sale for ${p.name}`}
+                            />
+                          ) : (
+                            <span className="text-gray-400">—</span>
+                          )}
+                        </td>
+                        <td className="p-3">
+                          {p.variantsCount > 0 ? (
+                            <button
+                              onClick={() => toggleVariants(p)}
+                              disabled={busy}
+                              aria-expanded={expandedId === p.id}
+                              className="px-2.5 py-1.5 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 rounded-lg text-xs font-medium disabled:opacity-50 inline-flex items-center gap-1 whitespace-nowrap"
+                            >
+                              <i className={expandedId === p.id ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line'} aria-hidden></i>
+                              {expandedId === p.id ? 'Hide variants' : 'Variant prices'}
+                            </button>
+                          ) : (
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="number"
+                                inputMode="decimal"
+                                min={0}
+                                step="0.01"
+                                value={rowPrice[p.id] ?? ''}
+                                onChange={(e) => setRowPrice((prev) => ({ ...prev, [p.id]: e.target.value }))}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') applyRowPrice(p);
+                                }}
+                                placeholder="₵"
+                                aria-label={`Sale price for ${p.name}`}
+                                className="w-24 px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              />
+                              <button
+                                onClick={() => applyRowPrice(p)}
+                                disabled={busy || !rowPrice[p.id]}
+                                className="px-2.5 py-1.5 bg-blue-700 hover:bg-blue-800 text-white rounded-lg text-xs font-semibold disabled:opacity-50"
+                              >
+                                Set
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                        <td className="p-3 text-right">
+                          {p.hasSale && (
+                            <button
+                              onClick={() => removeRow(p)}
+                              disabled={busy}
+                              className="text-xs font-semibold text-red-700 hover:underline disabled:opacity-50 whitespace-nowrap"
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+
+                      {expandedId === p.id && (
+                        <tr className="border-b border-gray-100 bg-gray-50">
+                          <td></td>
+                          <td colSpan={7} className="p-4">
+                            {variantLoading && !variantData[p.id] ? (
+                              <p className="text-sm text-gray-500">
+                                <i className="ri-loader-4-line animate-spin mr-1" aria-hidden></i>
+                                Loading variants…
+                              </p>
+                            ) : (
+                              <div className="space-y-3 max-w-2xl">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="text-sm text-gray-700">Fill every variant with</span>
+                                  <input
+                                    type="number"
+                                    inputMode="numeric"
+                                    min={1}
+                                    max={99}
+                                    value={variantFillAll}
+                                    onChange={(e) => setVariantFillAll(e.target.value)}
+                                    placeholder="%"
+                                    aria-label="Percent off for every variant"
+                                    className="w-20 px-2 py-1.5 border border-gray-300 rounded-lg text-sm"
+                                  />
+                                  <span className="text-sm text-gray-700">off</span>
+                                  <button
+                                    onClick={() => fillAllVariants(p)}
+                                    className="px-2.5 py-1.5 bg-white border border-gray-300 hover:bg-gray-100 rounded-lg text-xs font-semibold"
+                                  >
+                                    Fill
+                                  </button>
+                                </div>
+                                <table className="w-full text-sm bg-white border border-gray-200 rounded-lg overflow-hidden">
+                                  <thead>
+                                    <tr className="text-left bg-gray-50 border-b border-gray-200">
+                                      <th className="p-2 font-semibold">Variant</th>
+                                      <th className="p-2 font-semibold">Regular</th>
+                                      <th className="p-2 font-semibold">Sale now</th>
+                                      <th className="p-2 font-semibold">New sale price</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {(variantData[p.id] || []).map((v) => (
+                                      <tr key={v.id} className="border-b border-gray-100 last:border-b-0">
+                                        <td className="p-2 text-gray-900">{v.label}</td>
+                                        <td className="p-2 tabular-nums text-gray-700">{fmt(v.regular)}</td>
+                                        <td className="p-2 tabular-nums">
+                                          {v.sale != null ? (
+                                            <span className="font-semibold text-red-600">{fmt(v.sale)}</span>
+                                          ) : (
+                                            <span className="text-gray-400">—</span>
+                                          )}
+                                        </td>
+                                        <td className="p-2">
+                                          <input
+                                            type="number"
+                                            inputMode="decimal"
+                                            min={0}
+                                            step="0.01"
+                                            value={variantInputs[v.id] ?? ''}
+                                            onChange={(e) => setVariantInputs((prev) => ({ ...prev, [v.id]: e.target.value }))}
+                                            placeholder="₵"
+                                            aria-label={`New sale price for ${v.label}`}
+                                            className="w-28 px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                          />
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                                <div className="flex items-center gap-3">
+                                  <button
+                                    onClick={() => applyVariantPrices(p)}
+                                    disabled={busy}
+                                    className="px-4 py-2 bg-blue-700 hover:bg-blue-800 text-white rounded-lg text-sm font-semibold disabled:opacity-50"
+                                  >
+                                    Apply variant prices
+                                  </button>
+                                  <span className="text-xs text-gray-600">Variants you leave empty keep the price they have now.</span>
+                                </div>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {!loading && !loadError && filtered.length > PAGE_SIZE && (
+          <div className="flex items-center justify-between gap-3 border-t border-gray-200 px-4 py-3 text-sm">
+            <span className="text-gray-600">
+              Page {currentPage} of {totalPages} · {filtered.length} products
+            </span>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setPage(currentPage - 1)}
+                disabled={currentPage <= 1}
+                className="px-3 py-1.5 border border-gray-300 rounded-lg font-medium hover:bg-gray-50 disabled:opacity-50"
+              >
+                Previous
+              </button>
+              <button
+                onClick={() => setPage(currentPage + 1)}
+                disabled={currentPage >= totalPages}
+                className="px-3 py-1.5 border border-gray-300 rounded-lg font-medium hover:bg-gray-50 disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+          </div>
         )}
       </div>
     </div>
-  );
-}
-
-export default function AdminSalesPage() {
-  return (
-    <Suspense>
-      <SaleAndDiscounts />
-    </Suspense>
   );
 }

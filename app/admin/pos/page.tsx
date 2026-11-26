@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import { parseStorePricing, resolveLinePrice } from '@/lib/pricing';
+import { resolveLinePrice } from '@/lib/pricing';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -351,23 +351,19 @@ export default function POSPage() {
     const fetchData = async () => {
         try {
             setLoading(true);
-            // The till charges what the online shop charges: the running sale or
-            // product discount is applied to every price here.
-            const [{ data: prodData }, { data: pricingRow }] = await Promise.all([
-                supabase
-                    .from('products')
-                    .select(`id, name, price, compare_at_price, quantity, sku, metadata, categories(name), product_images(url)`)
-                    .eq('status', 'active')
-                    .order('name'),
-                supabase.from('site_settings').select('value').eq('key', 'store_pricing').maybeSingle(),
-            ]);
-            const pricing = parseStorePricing(pricingRow?.value);
+            // The till charges what the online shop charges: a live sale
+            // lowers the price here too.
+            const { data: prodData } = await supabase
+                .from('products')
+                .select(`id, name, price, compare_at_price, quantity, sku, metadata, categories(name), product_images(url)`)
+                .eq('status', 'active')
+                .order('name');
 
             if (prodData) {
                 const formatted: Product[] = prodData.map((p: any) => ({
                     id: p.id,
                     name: p.name,
-                    price: resolveLinePrice(p, null, pricing),
+                    price: resolveLinePrice(p, null),
                     regularPrice: Number(p.price) || 0,
                     quantity: p.quantity,
                     category: p.categories?.name || 'Uncategorized',

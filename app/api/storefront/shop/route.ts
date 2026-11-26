@@ -13,7 +13,6 @@ import {
   tokenizeSearchQuery,
 } from '@/lib/product-search';
 import { priceProducts } from '@/lib/pricing';
-import { getStorePricing } from '@/lib/store-pricing';
 
 const PRODUCT_SELECT = `
   id, name, slug, price, compare_at_price, quantity, moq, rating_avg, created_at, featured, status, category_id, metadata,
@@ -199,7 +198,7 @@ async function runSmartSearch(params: {
   }
 
   // Price first, so the price filter and sort use what the shopper actually pays.
-  ranked = priceProducts(ranked, await getStorePricing(), { stripMetadata: true });
+  ranked = priceProducts(ranked, { stripMetadata: true });
   ranked = applyPriceAndRating(ranked, priceMin, priceMax, rating);
   ranked = sortProducts(ranked, sortBy, true);
 
@@ -318,7 +317,7 @@ export async function GET(request: Request) {
       ? (data || []).filter((product) => productBelongsToCategoryIds(product, categoryFilterIds))
       : (data || []);
 
-    const pricedData = priceProducts(safeData as any[], await getStorePricing(), { stripMetadata: true });
+    const pricedData = priceProducts(safeData as any[], { stripMetadata: true });
 
     return NextResponse.json(
       { data: pricedData, count: count ?? 0 },
