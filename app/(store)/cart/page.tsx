@@ -3,7 +3,6 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { useState } from 'react';
-import CartCountdown from '@/components/CartCountdown';
 import AdvancedCouponSystem from '@/components/AdvancedCouponSystem';
 import { useCart } from '@/context/CartContext';
 import PageHero from '@/components/PageHero';
@@ -63,7 +62,6 @@ export default function CartPage() {
       <PageHero title="Shopping Cart" />
       <div className="py-12 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
 
-        <CartCountdown />
         {/* <FreeShippingBar currentAmount={subtotal} threshold={200} /> */}
 
         {cartItems.length === 0 && savedItems.length === 0 ? (

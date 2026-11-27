@@ -45,6 +45,20 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: false,
   },
   // Security + Caching headers
+  // One address for the shop. The cart, wishlist and sign-in are saved per address, so a
+  // shopper who moved between delizbeautytools.com and www.delizbeautytools.com found an
+  // empty cart. Everything on the bare address now goes to www, the address used in
+  // payment links and texts. /api is left alone so payment callbacks are never redirected.
+  async redirects() {
+    return [
+      {
+        source: '/:path((?!api/|_next/).*)',
+        has: [{ type: 'host', value: 'delizbeautytools.com' }],
+        destination: 'https://www.delizbeautytools.com/:path',
+        permanent: true,
+      },
+    ];
+  },
   async headers() {
     return [
       {
