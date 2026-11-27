@@ -41,7 +41,7 @@ export function SmsCreditDashboardCard({ buySmsHref = '/admin/sms-credit' }: Pro
   if (!empty) return null;
 
   return (
-    <div role="alert" className="flex flex-wrap items-center gap-x-4 gap-y-2 bg-red-600 px-4 py-3 text-white lg:px-7">
+    <div role="alert" className="flex flex-wrap items-center gap-x-4 gap-y-2 bg-red-600 px-4 py-3 text-white lg:px-7 print:hidden">
       <svg viewBox="0 0 24 24" aria-hidden className="h-5 w-5 flex-none" fill="currentColor">
         <path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm1 14h-2v-2h2v2Zm0-4h-2V6h2v6Z" />
       </svg>

@@ -36,7 +36,9 @@ export default function OrderDetailClient({ orderId }: OrderDetailClientProps) {
     if (!document.getElementById(styleId)) {
       const style = document.createElement('style');
       style.id = styleId;
-      style.textContent = '@media print { body * { visibility: hidden; } .print-section, .print-section * { visibility: visible; } .print-section { position: absolute; left: 0; top: 0; width: 100%; padding: 20px; } .no-print { display: none !important; } }';
+      // Transitions are switched off for print: an element that is mid-transition is
+      // printed in its old state, which left the admin sidebar covering the slip.
+      style.textContent = '@media print { *, *::before, *::after { transition: none !important; animation: none !important; } body * { visibility: hidden; } .print-section, .print-section * { visibility: visible; } .print-section { position: absolute; left: 0; top: 0; width: 100%; padding: 20px; } .no-print { display: none !important; } }';
       document.head.appendChild(style);
     }
     return () => {
@@ -54,8 +56,30 @@ export default function OrderDetailClient({ orderId }: OrderDetailClientProps) {
     if (!order || typeof window === 'undefined') return;
     const shouldPrint = new URLSearchParams(window.location.search).get('print') === 'true';
     if (!shouldPrint) return;
-    const timer = window.setTimeout(() => window.print(), 800);
-    return () => window.clearTimeout(timer);
+    // Print once the product photos on the slip have loaded (or after 4 seconds),
+    // so the slip does not go to the printer with empty picture boxes.
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      const photos = Array.from(document.querySelectorAll<HTMLImageElement>('.print-section img'));
+      await Promise.race([
+        Promise.all(
+          photos.map((img) =>
+            img.complete
+              ? Promise.resolve()
+              : new Promise<void>((resolve) => {
+                  img.addEventListener('load', () => resolve(), { once: true });
+                  img.addEventListener('error', () => resolve(), { once: true });
+                })
+          )
+        ),
+        new Promise<void>((resolve) => window.setTimeout(resolve, 4000)),
+      ]);
+      if (!cancelled) window.print();
+    }, 400);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, [order]);
 
   const fetchOrderDetails = async () => {

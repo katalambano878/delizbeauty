@@ -358,14 +358,16 @@ export default function AdminLayout({
       {/* Mobile Overlay */}
       {isSidebarOpen && (
         <div
-          className="fixed inset-0 bg-black/50 z-30 lg:hidden glass-overlay"
+          className="fixed inset-0 bg-black/50 z-30 lg:hidden print:hidden glass-overlay"
           onClick={() => setIsSidebarOpen(false)}
         />
       )}
 
-      {/* Sidebar - Mobile: Transform / Desktop: Width transition */}
+      {/* Sidebar - Mobile: Transform / Desktop: Width transition.
+          print:hidden removes it from printouts at once. Hiding it with visibility
+          is not enough: its transition leaves it painted over the page being printed. */}
       <aside
-        className={`fixed top-0 left-0 z-40 h-screen bg-white border-r border-gray-200 transition-all duration-300
+        className={`fixed top-0 left-0 z-40 h-screen bg-white border-r border-gray-200 transition-all duration-300 print:hidden
           w-64
           ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} 
           ${isSidebarOpen ? 'lg:w-64' : 'lg:w-0 lg:overflow-hidden'}
@@ -428,8 +430,8 @@ export default function AdminLayout({
       </aside>
 
       {/* Main Content */}
-      <div className={`transition-all duration-300 ml-0 ${isSidebarOpen ? 'lg:ml-64' : 'lg:ml-0'}`}>
-        <header className="bg-white border-b border-gray-200 sticky top-0 z-30">
+      <div className={`transition-all duration-300 ml-0 print:!ml-0 print:transition-none ${isSidebarOpen ? 'lg:ml-64' : 'lg:ml-0'}`}>
+        <header className="bg-white border-b border-gray-200 sticky top-0 z-30 print:hidden">
           <div className="px-4 py-4 lg:px-6 flex items-center justify-between">
             <button
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
